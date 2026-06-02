@@ -10,38 +10,92 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install unzip
-        run: sudo apt-get update -y && sudo apt-get install -y unzip
-
-      - name: Find zip & unzip
+      - name: Install tools
         run: |
+          sudo apt-get update -y
+          sudo apt-get install -y unzip dos2unix
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Unzip & detect gradlew
+        id: detect
+        run: |
+          set -euo pipefail
           ls -la
-          ZIP="$(ls -1 *.zip 2>/dev/null | head -n 1)"
-          if [ -z "$ZIP" ]; then
+          ZIP="$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          if [ -z "${ZIP:-}" ]; then
             echo "Không tìm thấy file .zip ở root repo"
             exit 1
           fi
-          echo "ZIP=$ZIP"
+
           rm -rf project
           mkdir -p project
           unzip -q "$ZIP" -d project
-          echo "Top folders:"
-          find project -maxdepth 2 -type d -print
 
-      - name: Build debug APK (auto-detect gradlew dir)
-        run: |
-          ROOT="$(find project -maxdepth 8 -type f -name gradlew -print -quit | sed 's|/gradlew$||')"
-          if [ -z "$ROOT" ]; then
+          GRADLEW_PATH="$(find project -maxdepth 10 -type f -name gradlew -print -quit)"
+          if [ -z "${GRADLEW_PATH:-}" ]; then
             echo "Không tìm thấy gradlew trong zip sau khi giải nén"
             exit 1
           fi
-          echo "Detected ROOT=$ROOT"
-          chmod +x "$ROOT/gradlew"
-          cd "$ROOT"
-          ./gradlew :app:assembleDebug
+
+          ROOT_DIR="$(dirname "$GRADLEW_PATH")"
+          echo "Detected ROOT_DIR=$ROOT_DIR"
+          dos2unix "$ROOT_DIR/gradlew" || true
+          chmod +x "$ROOT_DIR/gradlew"
+
+          echo "root_dir=$ROOT_DIR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build (JDK 17)
+        id: build17
+        continue-on-error: true
+        working-directory: ${{ steps.detect.outputs.root_dir }}
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - uses: actions/setup-java@v4
+        if: steps.build17.outcome == 'failure'
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Build (JDK 11)
+        id: build11
+        if: steps.build17.outcome == 'failure'
+        continue-on-error: true
+        working-directory: ${{ steps.detect.outputs.root_dir }}
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - uses: actions/setup-java@v4
+        if: steps.build17.outcome == 'failure' && steps.build11.outcome == 'failure'
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Build (JDK 8)
+        if: steps.build17.outcome == 'failure' && steps.build11.outcome == 'failure'
+        working-directory: ${{ steps.detect.outputs.root_dir }}
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Find APK
+        id: find_apk
+        run: |
+          set -euo pipefail
+          APK="$(find project -type f -name '*.apk' -path '*/build/outputs/apk/*' -print -quit)"
+          if [ -z "${APK:-}" ]; then
+            echo "Không tìm thấy APK trong build/outputs/apk"
+            find project -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: project/**/app/build/outputs/apk/debug/*.apk
+          name: app-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
