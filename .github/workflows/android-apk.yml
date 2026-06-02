@@ -26,6 +26,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install SDK packages
+        run: |
+          sdkmanager "platforms;android-33" "build-tools;33.0.0"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -69,7 +73,7 @@ jobs:
           chmod +x "$GRADLE_BIN"
           echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
 
-      - name: Build debug APK (no wrapper)
+      - name: Build debug APK (force repos, no wrapper)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
@@ -77,12 +81,29 @@ jobs:
           rm -f local.properties
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+          cat > /tmp/init.gradle <<'EOF'
+          gradle.beforeProject { p ->
+            p.buildscript.repositories.clear()
+            p.buildscript.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+            p.repositories.clear()
+            p.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+          }
+          EOF
+
           TASK="assembleDebug"
           if [ -d "./app" ]; then
             TASK=":app:assembleDebug"
           fi
 
-          "${{ steps.gradle.outputs.gradle_bin }}" --no-daemon --stacktrace "$TASK"
+          "${{ steps.gradle.outputs.gradle_bin }}" -I /tmp/init.gradle --no-daemon --stacktrace "$TASK"
 
       - name: Find APK
         id: find_apk
