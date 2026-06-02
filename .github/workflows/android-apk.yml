@@ -59,14 +59,24 @@ jobs:
           chmod +x "$ROOT/gradlew"
           echo "root_dir=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Enable AndroidX + suppress warning
+      - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
           touch gradle.properties
-          grep -q '^android\.useAndroidX=' gradle.properties || echo 'android.useAndroidX=true' >> gradle.properties
-          grep -q '^android\.enableJetifier=' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
-          grep -q '^android\.suppressUnsupportedCompileSdk=' gradle.properties || echo 'android.suppressUnsupportedCompileSdk=33' >> gradle.properties
+
+          sed -i \
+            -e '/^android\.useAndroidX=/d' \
+            -e '/^android\.enableJetifier=/d' \
+            -e '/^android\.suppressUnsupportedCompileSdk=/d' \
+            gradle.properties
+
+          printf '\n' >> gradle.properties
+          {
+            echo 'android.useAndroidX=true'
+            echo 'android.enableJetifier=true'
+            echo 'android.suppressUnsupportedCompileSdk=33'
+          } >> gradle.properties
 
       - name: Download Gradle 7.0.2
         id: gradle
