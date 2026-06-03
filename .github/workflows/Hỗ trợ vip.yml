@@ -59,18 +59,23 @@ jobs:
           chmod +x "$ROOT/gradlew"
           echo "root_dir=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Remove :opencv module references (if any)
+      - name: Force settings.gradle to only include :app
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
-
+          ROOT_NAME_LINE=""
           if [ -f settings.gradle ]; then
-            sed -i \
-              -e "s/include ':app',[[:space:]]*':opencv'/include ':app'/" \
-              -e "/project\\(':opencv'\\)\\.projectDir/d" \
-              settings.gradle || true
+            ROOT_NAME_LINE="$(grep -E '^[[:space:]]*rootProject\.name[[:space:]]*=' settings.gradle || true)"
+          fi
+          echo "include ':app'" > settings.gradle
+          if [ -n "${ROOT_NAME_LINE:-}" ]; then
+            echo "$ROOT_NAME_LINE" >> settings.gradle
           fi
 
+      - name: Remove any :opencv dependency lines from app/build.gradle
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
           if [ -f app/build.gradle ]; then
             sed -i \
               -e "/project\\(':opencv'\\)/d" \
