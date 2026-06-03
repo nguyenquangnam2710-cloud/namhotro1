@@ -1,0 +1,154 @@
+name: Build APK from ZIP
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y unzip dos2unix curl
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          sdkmanager "platforms;android-33" "build-tools;33.0.0"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Find zip & unzip
+        id: unzip
+        run: |
+          set -euo pipefail
+          ZIP="$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          if [ -z "${ZIP:-}" ]; then
+            echo "Không tìm thấy file .zip ở root repo"
+            exit 1
+          fi
+
+          rm -rf project
+          mkdir -p project
+          unzip -q "$ZIP" -d project
+
+          ROOT="$(find project -maxdepth 10 -type f -name gradlew -print -quit | sed 's|/gradlew$||')"
+          if [ -z "${ROOT:-}" ]; then
+            echo "Không tìm thấy gradlew trong zip sau khi giải nén"
+            exit 1
+          fi
+
+          dos2unix "$ROOT/gradlew" || true
+          chmod +x "$ROOT/gradlew"
+          echo "root_dir=$ROOT" >> "$GITHUB_OUTPUT"
+
+      - name: Download OpenCV Android SDK (create :opencv module)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+          curl -L "https://github.com/opencv/opencv/releases/download/4.13.0/opencv-4.13.0-android-sdk.zip" -o opencv.zip
+          rm -rf /tmp/opencv
+          mkdir -p /tmp/opencv
+          unzip -q opencv.zip -d /tmp/opencv
+          rm -rf opencv
+          cp -R /tmp/opencv/OpenCV-android-sdk/sdk opencv
+
+      - name: Fix gradle.properties (AndroidX)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+          touch gradle.properties
+
+          sed -i \
+            -e '/^android\.useAndroidX=/d' \
+            -e '/^android\.enableJetifier=/d' \
+            -e '/^android\.suppressUnsupportedCompileSdk=/d' \
+            gradle.properties
+
+          printf '\n' >> gradle.properties
+          {
+            echo 'android.useAndroidX=true'
+            echo 'android.enableJetifier=true'
+            echo 'android.suppressUnsupportedCompileSdk=33'
+          } >> gradle.properties
+
+      - name: Download Gradle 7.0.2
+        id: gradle
+        run: |
+          set -euo pipefail
+          VER="7.0.2"
+          URL="https://services.gradle.org/distributions/gradle-${VER}-bin.zip"
+          curl -L "$URL" -o gradle.zip
+          rm -rf /tmp/gradle-dist
+          mkdir -p /tmp/gradle-dist
+          unzip -q gradle.zip -d /tmp/gradle-dist
+          GRADLE_BIN="$(find /tmp/gradle-dist -maxdepth 3 -type f -path '*/bin/gradle' -print -quit)"
+          chmod +x "$GRADLE_BIN"
+          echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK (force repos, no wrapper)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+
+          rm -f local.properties
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+          cat > /tmp/init.gradle <<'EOF'
+          gradle.beforeProject { p ->
+            p.buildscript.repositories.clear()
+            p.buildscript.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+            p.repositories.clear()
+            p.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+          }
+          EOF
+
+          TASK="assembleDebug"
+          if [ -d "./app" ]; then
+            TASK=":app:assembleDebug"
+          fi
+
+          "${{ steps.gradle.outputs.gradle_bin }}" -I /tmp/init.gradle --no-daemon --stacktrace "$TASK"
+
+      - name: Find APK
+        id: find_apk
+        run: |
+          set -euo pipefail
+          APK="$(find project -type f -name '*.apk' -path '*/build/outputs/apk/*' -print -quit)"
+          if [ -z "${APK:-}" ]; then
+            echo "Không tìm thấy APK"
+            find project -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
