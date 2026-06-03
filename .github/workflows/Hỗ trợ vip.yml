@@ -85,12 +85,12 @@ jobs:
               app/build.gradle || true
           fi
 
-      - name: Download OpenCV SDK and inject sources + native libs into app
+      - name: Download OpenCV SDK and inject sources + resources + native libs into app
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
 
-          curl -L "https://github.com/opencv/opencv/releases/download/4.13.0/opencv-4.13.0-android-sdk.zip" -o opencv.zip
+          curl -fL "https://github.com/opencv/opencv/releases/download/4.13.0/opencv-4.13.0-android-sdk.zip" -o opencv.zip
           rm -rf /tmp/opencv
           mkdir -p /tmp/opencv
           unzip -q opencv.zip -d /tmp/opencv
@@ -103,20 +103,18 @@ jobs:
           fi
 
           SRC_DIR="$OPENCV_SDK/java/src"
+          RES_DIR="$OPENCV_SDK/java/res"
+
           if [ ! -d "$SRC_DIR" ]; then
             echo "Không tìm thấy sdk/java/src"
             find "$OPENCV_SDK/java" -maxdepth 4 -type d -print || true
             exit 1
           fi
 
-          mkdir -p app/src/main/java
-          mkdir -p app/libs
-          rsync -a "$SRC_DIR/" app/src/main/java/
-
-          OPENCV_ANDROID_DIR="app/src/main/java/org/opencv/android"
-          if [ -d "$OPENCV_ANDROID_DIR" ]; then
-            grep -rl "import org.opencv.R" "$OPENCV_ANDROID_DIR" | xargs -r rm -f
-            grep -rl "import org.opencv.BuildConfig" "$OPENCV_ANDROID_DIR" | xargs -r rm -f
+          if [ ! -d "$RES_DIR" ]; then
+            echo "Không tìm thấy sdk/java/res"
+            find "$OPENCV_SDK/java" -maxdepth 4 -type d -print || true
+            exit 1
           fi
 
           if [ ! -d "$OPENCV_SDK/native/libs" ]; then
@@ -125,8 +123,22 @@ jobs:
             exit 1
           fi
 
+          mkdir -p app/src/main/java
+          mkdir -p app/src/main/res
           mkdir -p app/src/main/jniLibs
+
+          rsync -a "$SRC_DIR/" app/src/main/java/
+          rsync -a "$RES_DIR/" app/src/main/res/
           rsync -a "$OPENCV_SDK/native/libs/" app/src/main/jniLibs/
+
+          APP_PKG="$(sed -n 's/.*package="\([^"]*\)".*/\1/p' app/src/main/AndroidManifest.xml | head -n 1)"
+          if [ -z "${APP_PKG:-}" ]; then
+            echo "Không đọc được package từ app/src/main/AndroidManifest.xml"
+            exit 1
+          fi
+
+          grep -rl "org.opencv.R" app/src/main/java/org/opencv/android | xargs -r sed -i "s/org\.opencv\.R/${APP_PKG}.R/g"
+          grep -rl "org.opencv.BuildConfig" app/src/main/java/org/opencv/android | xargs -r sed -i "s/org\.opencv\.BuildConfig/${APP_PKG}.BuildConfig/g"
 
       - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
