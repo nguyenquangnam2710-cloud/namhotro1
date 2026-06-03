@@ -80,7 +80,7 @@ jobs:
               app/build.gradle || true
           fi
 
-      - name: Download OpenCV SDK and inject into app (jar/aar + so)
+      - name: Download OpenCV SDK and inject into app (auto-detect)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
@@ -90,15 +90,21 @@ jobs:
           mkdir -p /tmp/opencv
           unzip -q opencv.zip -d /tmp/opencv
 
-          OPENCV_SDK="/tmp/opencv/OpenCV-android-sdk/sdk"
+          OPENCV_SDK="$(find /tmp/opencv -maxdepth 6 -type d -path '*/OpenCV-android-sdk/sdk' -print -quit)"
+          if [ -z "${OPENCV_SDK:-}" ]; then
+            echo "Không tìm thấy OpenCV-android-sdk/sdk trong zip"
+            find /tmp/opencv -maxdepth 4 -type d -print || true
+            exit 1
+          fi
+          echo "OPENCV_SDK=$OPENCV_SDK"
 
           mkdir -p app/libs
           mkdir -p app/src/main/jniLibs
 
-          JAR="$(find "$OPENCV_SDK/java" -type f -name '*.jar' -print -quit || true)"
+          JAR="$(find "$OPENCV_SDK" -type f -name '*.jar' -print -quit || true)"
           AAR=""
           if [ -z "${JAR:-}" ]; then
-            AAR="$(find "$OPENCV_SDK/java" -type f -name '*.aar' -print -quit || true)"
+            AAR="$(find "$OPENCV_SDK" -type f -name '*.aar' -print -quit || true)"
           fi
 
           if [ -n "${JAR:-}" ]; then
@@ -119,17 +125,24 @@ jobs:
             fi
           else
             echo "Không tìm thấy opencv .jar hoặc .aar trong SDK"
-            find "$OPENCV_SDK/java" -maxdepth 6 -type f -print || true
+            find "$OPENCV_SDK" -maxdepth 6 -type f -print || true
             exit 1
           fi
 
-          if [ ! -d "$OPENCV_SDK/native/libs" ]; then
-            echo "Không tìm thấy native/libs trong SDK"
-            find "$OPENCV_SDK/native" -maxdepth 6 -type d -print || true
+          NATIVE_LIBS=""
+          if [ -d "$OPENCV_SDK/native/libs" ]; then
+            NATIVE_LIBS="$OPENCV_SDK/native/libs"
+          elif [ -d "$OPENCV_SDK/native" ]; then
+            NATIVE_LIBS="$(find "$OPENCV_SDK/native" -maxdepth 4 -type d -name libs -print -quit || true)"
+          fi
+
+          if [ -z "${NATIVE_LIBS:-}" ]; then
+            echo "Không tìm thấy native libs trong SDK"
+            find "$OPENCV_SDK" -maxdepth 6 -type d -print || true
             exit 1
           fi
 
-          cp -R "$OPENCV_SDK/native/libs/"* app/src/main/jniLibs/
+          cp -R "$NATIVE_LIBS/"* app/src/main/jniLibs/
 
       - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
