@@ -1,4 +1,4 @@
-name: Build APK from zip openvc
+name: Build APK from ZIP openvc
 
 on:
   workflow_dispatch:
@@ -67,8 +67,10 @@ jobs:
           rm -rf /tmp/opencv
           mkdir -p /tmp/opencv
           unzip -q opencv.zip -d /tmp/opencv
-          rm -rf opencv
-          cp -R /tmp/opencv/OpenCV-android-sdk/sdk opencv
+
+          rm -rf opencv native
+          cp -R /tmp/opencv/OpenCV-android-sdk/sdk/java opencv
+          cp -R /tmp/opencv/OpenCV-android-sdk/sdk/native native
 
       - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
