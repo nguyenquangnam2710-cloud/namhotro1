@@ -110,7 +110,14 @@ jobs:
           fi
 
           mkdir -p app/src/main/java
+          mkdir -p app/libs
           rsync -a "$SRC_DIR/" app/src/main/java/
+
+          OPENCV_ANDROID_DIR="app/src/main/java/org/opencv/android"
+          if [ -d "$OPENCV_ANDROID_DIR" ]; then
+            grep -rl "import org.opencv.R" "$OPENCV_ANDROID_DIR" | xargs -r rm -f
+            grep -rl "import org.opencv.BuildConfig" "$OPENCV_ANDROID_DIR" | xargs -r rm -f
+          fi
 
           if [ ! -d "$OPENCV_SDK/native/libs" ]; then
             echo "Không tìm thấy sdk/native/libs"
