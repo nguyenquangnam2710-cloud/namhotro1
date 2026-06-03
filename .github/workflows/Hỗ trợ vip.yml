@@ -1,4 +1,4 @@
-name: Build APK from ZIP (OpenCV module)
+name: Build APK from ZIP (OpenCV source inject)
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y unzip dos2unix curl
+          sudo apt-get install -y unzip dos2unix curl rsync
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -59,7 +59,28 @@ jobs:
           chmod +x "$ROOT/gradlew"
           echo "root_dir=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Download OpenCV SDK and create :opencv module
+      - name: Remove :opencv module references (if any)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+
+          if [ -f settings.gradle ]; then
+            sed -i \
+              -e "s/include ':app',[[:space:]]*':opencv'/include ':app'/" \
+              -e "/project\\(':opencv'\\)\\.projectDir/d" \
+              settings.gradle || true
+          fi
+
+          if [ -f app/build.gradle ]; then
+            sed -i \
+              -e "/project\\(':opencv'\\)/d" \
+              -e "/project\\(path:[[:space:]]*\":opencv\"/d" \
+              -e "/findProject\\(':opencv'\\)/d" \
+              -e "/opencvProject/d" \
+              app/build.gradle || true
+          fi
+
+      - name: Download OpenCV SDK and inject sources + native libs into app
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
@@ -76,36 +97,24 @@ jobs:
             exit 1
           fi
 
-          rm -rf opencv native
-          cp -R "$OPENCV_SDK/java" opencv
-          cp -R "$OPENCV_SDK/native" native
-
-      - name: Ensure settings.gradle includes :opencv
-        working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: |
-          set -euo pipefail
-          if [ ! -f settings.gradle ]; then
-            echo "include ':app', ':opencv'" > settings.gradle
+          SRC_DIR="$OPENCV_SDK/java/src"
+          if [ ! -d "$SRC_DIR" ]; then
+            echo "Không tìm thấy sdk/java/src"
+            find "$OPENCV_SDK/java" -maxdepth 4 -type d -print || true
+            exit 1
           fi
-          if ! grep -q ":opencv" settings.gradle; then
-            sed -i "s/include ':app'/include ':app', ':opencv'/" settings.gradle || true
+
+          mkdir -p app/src/main/java
+          rsync -a "$SRC_DIR/" app/src/main/java/
+
+          if [ ! -d "$OPENCV_SDK/native/libs" ]; then
+            echo "Không tìm thấy sdk/native/libs"
+            find "$OPENCV_SDK/native" -maxdepth 4 -type d -print || true
+            exit 1
           fi
-          grep -q "project(':opencv').projectDir" settings.gradle || echo "project(':opencv').projectDir = new File(rootDir, 'opencv')" >> settings.gradle
 
-      - name: Patch app/build.gradle to depend on :opencv (default config)
-        working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: |
-          set -euo pipefail
-
-          sed -i \
-            -e "/project\\(':opencv'\\)/d" \
-            -e "/findProject\\(':opencv'\\)/d" \
-            -e "/opencvProject/d" \
-            app/build.gradle || true
-
-          if ! grep -q 'implementation project(path: ":opencv"' app/build.gradle; then
-            sed -i '/dependencies[[:space:]]*{/a\    implementation project(path: ":opencv", configuration: "default")' app/build.gradle
-          fi
+          mkdir -p app/src/main/jniLibs
+          rsync -a "$OPENCV_SDK/native/libs/" app/src/main/jniLibs/
 
       - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
@@ -139,17 +148,6 @@ jobs:
           GRADLE_BIN="$(find /tmp/gradle-dist -maxdepth 3 -type f -path '*/bin/gradle' -print -quit)"
           chmod +x "$GRADLE_BIN"
           echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
-
-      - name: Dump gradle files (debug)
-        working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: |
-          set -euo pipefail
-          echo "=== settings.gradle ==="
-          sed -n '1,220p' settings.gradle || true
-          echo "=== app/build.gradle ==="
-          sed -n '1,320p' app/build.gradle || true
-          echo "=== opencv/build.gradle ==="
-          sed -n '1,320p' opencv/build.gradle || true
 
       - name: Build debug APK (force repos, no wrapper)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
