@@ -140,6 +140,17 @@ jobs:
           chmod +x "$GRADLE_BIN"
           echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
 
+      - name: Dump gradle files (debug)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+          echo "=== settings.gradle ==="
+          sed -n '1,220p' settings.gradle || true
+          echo "=== app/build.gradle ==="
+          sed -n '1,320p' app/build.gradle || true
+          echo "=== opencv/build.gradle ==="
+          sed -n '1,320p' opencv/build.gradle || true
+
       - name: Build debug APK (force repos, no wrapper)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
