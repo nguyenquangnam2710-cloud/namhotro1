@@ -1,4 +1,4 @@
-name: Build APK from ZIP (OpenCV inject)
+name: Build APK from ZIP (OpenCV module)
 
 on:
   workflow_dispatch:
@@ -59,28 +59,7 @@ jobs:
           chmod +x "$ROOT/gradlew"
           echo "root_dir=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Patch project to NOT use :opencv module
-        working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: |
-          set -euo pipefail
-
-          if [ -f settings.gradle ]; then
-            sed -i \
-              -e "s/include ':app',[[:space:]]*':opencv'/include ':app'/" \
-              -e "s/include ':app',[[:space:]]*\":opencv\"/include ':app'/" \
-              -e "/project\\(':opencv'\\)\\.projectDir/d" \
-              settings.gradle || true
-          fi
-
-          if [ -f app/build.gradle ]; then
-            sed -i \
-              -e "/project\\(':opencv'\\)/d" \
-              -e "/findProject\\(':opencv'\\)/d" \
-              -e "/opencvProject/d" \
-              app/build.gradle || true
-          fi
-
-      - name: Download OpenCV SDK and inject into app (auto-detect)
+      - name: Download OpenCV SDK and create :opencv module
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           set -euo pipefail
@@ -96,53 +75,37 @@ jobs:
             find /tmp/opencv -maxdepth 4 -type d -print || true
             exit 1
           fi
-          echo "OPENCV_SDK=$OPENCV_SDK"
 
-          mkdir -p app/libs
-          mkdir -p app/src/main/jniLibs
+          rm -rf opencv native
+          cp -R "$OPENCV_SDK/java" opencv
+          cp -R "$OPENCV_SDK/native" native
 
-          JAR="$(find "$OPENCV_SDK" -type f -name '*.jar' -print -quit || true)"
-          AAR=""
-          if [ -z "${JAR:-}" ]; then
-            AAR="$(find "$OPENCV_SDK" -type f -name '*.aar' -print -quit || true)"
+      - name: Ensure settings.gradle includes :opencv
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+          if [ ! -f settings.gradle ]; then
+            echo "include ':app', ':opencv'" > settings.gradle
           fi
-
-          if [ -n "${JAR:-}" ]; then
-            cp "$JAR" app/libs/opencv.jar
-          elif [ -n "${AAR:-}" ]; then
-            cp "$AAR" app/libs/opencv.aar
-
-            if ! grep -q 'flatDir' app/build.gradle; then
-              awk 'BEGIN{done=0}
-                   {print}
-                   !done && $0 ~ /^repositories[[:space:]]*\{/ {print "    flatDir { dirs \"libs\" }"; done=1}
-                  ' app/build.gradle > /tmp/app_build.gradle
-              mv /tmp/app_build.gradle app/build.gradle
-            fi
-
-            if ! grep -q 'implementation *(name: *"opencv"' app/build.gradle; then
-              sed -i '/dependencies[[:space:]]*{/a\    implementation(name: "opencv", ext: "aar")' app/build.gradle
-            fi
-          else
-            echo "Không tìm thấy opencv .jar hoặc .aar trong SDK"
-            find "$OPENCV_SDK" -maxdepth 6 -type f -print || true
-            exit 1
+          if ! grep -q ":opencv" settings.gradle; then
+            sed -i "s/include ':app'/include ':app', ':opencv'/" settings.gradle || true
           fi
+          grep -q "project(':opencv').projectDir" settings.gradle || echo "project(':opencv').projectDir = new File(rootDir, 'opencv')" >> settings.gradle
 
-          NATIVE_LIBS=""
-          if [ -d "$OPENCV_SDK/native/libs" ]; then
-            NATIVE_LIBS="$OPENCV_SDK/native/libs"
-          elif [ -d "$OPENCV_SDK/native" ]; then
-            NATIVE_LIBS="$(find "$OPENCV_SDK/native" -maxdepth 4 -type d -name libs -print -quit || true)"
+      - name: Patch app/build.gradle to depend on :opencv (default config)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+
+          sed -i \
+            -e "/project\\(':opencv'\\)/d" \
+            -e "/findProject\\(':opencv'\\)/d" \
+            -e "/opencvProject/d" \
+            app/build.gradle || true
+
+          if ! grep -q 'implementation project(path: ":opencv"' app/build.gradle; then
+            sed -i '/dependencies[[:space:]]*{/a\    implementation project(path: ":opencv", configuration: "default")' app/build.gradle
           fi
-
-          if [ -z "${NATIVE_LIBS:-}" ]; then
-            echo "Không tìm thấy native libs trong SDK"
-            find "$OPENCV_SDK" -maxdepth 6 -type d -print || true
-            exit 1
-          fi
-
-          cp -R "$NATIVE_LIBS/"* app/src/main/jniLibs/
 
       - name: Fix gradle.properties (AndroidX)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
