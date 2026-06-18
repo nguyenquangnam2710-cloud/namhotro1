@@ -195,6 +195,94 @@ jobs:
             echo "}" >> "$STUB"
           fi
 
+      - name: Create AimController.java with aiming algorithm
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          mkdir -p app/src/main/java/com/assistive/filter
+          cat > app/src/main/java/com/assistive/filter/AimController.java <<'EOF'
+          package com.assistive.filter;
+
+          import android.util.Log;
+          import java.io.IOException;
+
+          public class AimController {
+              private static final String TAG = "AimController";
+
+              /**
+               * Compute swipe velocity components (pixel/giay).
+               * @param enemyState 0 = dung yen, 1 = di bo, 2 = chay
+               * @param enemyDirection 1 = phai, -1 = trai, 0 = dung yen
+               * @param deltaY khoang cach tu bung len dau (25px neu dung, 24px neu chay)
+               * @return [Vx, Vy] pixel per second
+               */
+              public static float[] computeSwipeVelocity(int enemyState, int enemyDirection, int deltaY) {
+                  float Vx, Vy;
+                  Vy = 7550f + 10f * deltaY;
+                  int enemySpeed;
+                  switch (enemyState) {
+                      case 2: enemySpeed = 26; break;
+                      case 1: enemySpeed = 18; break;
+                      default: enemySpeed = 0;
+                  }
+                  Vx = enemyDirection * enemySpeed * 10f;
+                  return new float[]{Vx, Vy};
+              }
+
+              /**
+               * Perform a swipe gesture with calculated velocity.
+               * Requires root or Shizuku permission.
+               * @param durationMs 100ms golden window
+               * @param Vx horizontal velocity
+               * @param Vy vertical velocity (upward = negative)
+               * @param startX, startY initial touch coordinates (e.g., fire button position)
+               */
+              public static void performAimSwipe(int durationMs, float Vx, float Vy, float startX, float startY) {
+                  float endX = startX + Vx * (durationMs / 1000f);
+                  float endY = startY - Vy * (durationMs / 1000f); // subtract because screen coordinate Y increases downward
+
+                  String cmd = "input swipe " + (int)startX + " " + (int)startY + " "
+                          + (int)endX + " " + (int)endY + " " + durationMs;
+
+                  try {
+                      // With Shizuku
+                      Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
+                      p.waitFor();
+                      Log.d(TAG, "Aim swipe executed");
+                  } catch (Exception e) {
+                      Log.e(TAG, "Swipe failed", e);
+                  }
+              }
+
+              /**
+               * Apply system optimizations for touch, DPI, animations, DNS, etc.
+               * Requires root/Shizuku.
+               */
+              public static void applySystemOptimizations() {
+                  String[] commands = {
+                      "settings put system peak_refresh_rate 120",
+                      "settings put system min_refresh_rate 120",
+                      "settings put global window_animation_scale 0",
+                      "settings put global transition_animation_scale 0",
+                      "settings put global animator_duration_scale 0",
+                      "settings put system pointer_speed 7",
+                      "settings put system view.touch_slop 0",
+                      "settings put global private_dns_mode hostname",
+                      "settings put global private_dns_specifier 1.1.1.1.cloudflare-dns.com",
+                      "wm size 720x1600",   // optional, may be removed if it causes UI issues
+                      "wm density 560"       // adjust DPI
+                  };
+
+                  for (String cmd : commands) {
+                      try {
+                          Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
+                      } catch (IOException ignored) {
+                          Log.w(TAG, "Failed to run: " + cmd);
+                      }
+                  }
+              }
+          }
+          EOF
+
       - name: Download Gradle 7.0.2
         id: gradle
         run: |
