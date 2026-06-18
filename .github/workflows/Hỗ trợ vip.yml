@@ -77,7 +77,6 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f app/build.gradle ]; then
-            # Xoá dạng project(':opencv'), findProject, opencvProject...
             sed -i \
               -e "/project\\(':opencv'\\)/d" \
               -e "/project\\(path:[[:space:]]*\":opencv\"/d" \
@@ -85,10 +84,7 @@ jobs:
               -e "/opencvProject/d" \
               app/build.gradle || true
 
-            # Xoá dòng implementation Maven com.quickbirdstudios:opencv:xxxx
             sed -i "/implementation[[:space:]]*['\"]com\.quickbirdstudios:opencv:.*['\"]/d" app/build.gradle
-
-            # (Tuỳ chọn) Xoá cả dòng implementation files('libs/opencv-xxx.aar') nếu có
             sed -i "/implementation[[:space:]]*files(['\"]libs\/opencv.*['\"])/d" app/build.gradle || true
           fi
 
@@ -166,9 +162,38 @@ jobs:
             echo 'android.suppressUnsupportedCompileSdk=33'
           } >> gradle.properties
 
-      - name: Fix XML files with leading blank lines
+      - name: Fix XML files – remove BOM and leading blank lines
         working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: find app/src/main/res -type f -name "*.xml" -exec sed -i '1{/^$/d}' {} \;
+        run: |
+          find app/src/main/res -type f -name "*.xml" -exec perl -i -0777 -pe '
+            s/^\xEF\xBB\xBF//;
+            s/\A\s*//;
+            s/\A(<\?xml\b[^>]*\?>\s*)//i;
+            $_ = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" . $_ if /\A(?!<\?xml)/;
+          ' {} \;
+
+      - name: Fix Java – bad operand type int for !
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          sed -i "s/!Shizuku\.checkSelfPermission()/Shizuku.checkSelfPermission() != 0/g" app/src/main/java/com/assistive/filter/FullRedModeService.java
+
+      - name: Fix Java – import and create SystemTunerService if missing
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          FILE="app/src/main/java/com/assistive/filter/MainActivity.java"
+          if [ -f "$FILE" ]; then
+            if ! grep -q "import com.assistive.filter.SystemTunerService;" "$FILE"; then
+              sed -i "/^package/a import com.assistive.filter.SystemTunerService;" "$FILE"
+            fi
+          fi
+          STUB="app/src/main/java/com/assistive/filter/SystemTunerService.java"
+          if [ ! -f "$STUB" ]; then
+            mkdir -p "$(dirname "$STUB")"
+            echo "package com.assistive.filter;" > "$STUB"
+            echo "public class SystemTunerService extends android.app.Service {" >> "$STUB"
+            echo "  public android.os.IBinder onBind(android.content.Intent intent) { return null; }" >> "$STUB"
+            echo "}" >> "$STUB"
+          fi
 
       - name: Download Gradle 7.0.2
         id: gradle
