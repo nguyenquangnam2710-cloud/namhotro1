@@ -166,6 +166,10 @@ jobs:
             echo 'android.suppressUnsupportedCompileSdk=33'
           } >> gradle.properties
 
+      - name: Fix XML files with leading blank lines
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: find app/src/main/res -type f -name "*.xml" -exec sed -i '1{/^$/d}' {} \;
+
       - name: Download Gradle 7.0.2
         id: gradle
         run: |
