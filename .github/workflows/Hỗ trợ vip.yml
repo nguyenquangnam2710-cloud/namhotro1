@@ -77,12 +77,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f app/build.gradle ]; then
+            # Xoá dạng project(':opencv'), findProject, opencvProject...
             sed -i \
               -e "/project\\(':opencv'\\)/d" \
               -e "/project\\(path:[[:space:]]*\":opencv\"/d" \
               -e "/findProject\\(':opencv'\\)/d" \
               -e "/opencvProject/d" \
               app/build.gradle || true
+
+            # Xoá dòng implementation Maven com.quickbirdstudios:opencv:xxxx
+            sed -i "/implementation[[:space:]]*['\"]com\.quickbirdstudios:opencv:.*['\"]/d" app/build.gradle
+
+            # (Tuỳ chọn) Xoá cả dòng implementation files('libs/opencv-xxx.aar') nếu có
+            sed -i "/implementation[[:space:]]*files(['\"]libs\/opencv.*['\"])/d" app/build.gradle || true
           fi
 
       - name: Download OpenCV SDK and inject sources + resources + native libs into app
