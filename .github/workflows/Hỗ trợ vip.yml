@@ -1,4 +1,4 @@
-name: Build APK from ZIP (OpenCV source inject)
+name: Build APK from ZIP (OpenCV + MP40 full optimize)
 
 on:
   workflow_dispatch:
@@ -208,13 +208,6 @@ jobs:
           public class AimController {
               private static final String TAG = "AimController";
 
-              /**
-               * Compute swipe velocity components (pixel/giay).
-               * @param enemyState 0 = dung yen, 1 = di bo, 2 = chay
-               * @param enemyDirection 1 = phai, -1 = trai, 0 = dung yen
-               * @param deltaY khoang cach tu bung len dau (25px neu dung, 24px neu chay)
-               * @return [Vx, Vy] pixel per second
-               */
               public static float[] computeSwipeVelocity(int enemyState, int enemyDirection, int deltaY) {
                   float Vx, Vy;
                   Vy = 7550f + 10f * deltaY;
@@ -228,35 +221,19 @@ jobs:
                   return new float[]{Vx, Vy};
               }
 
-              /**
-               * Perform a swipe gesture with calculated velocity.
-               * Requires root or Shizuku permission.
-               * @param durationMs 100ms golden window
-               * @param Vx horizontal velocity
-               * @param Vy vertical velocity (upward = negative)
-               * @param startX, startY initial touch coordinates (e.g., fire button position)
-               */
               public static void performAimSwipe(int durationMs, float Vx, float Vy, float startX, float startY) {
                   float endX = startX + Vx * (durationMs / 1000f);
-                  float endY = startY - Vy * (durationMs / 1000f); // subtract because screen coordinate Y increases downward
-
+                  float endY = startY - Vy * (durationMs / 1000f);
                   String cmd = "input swipe " + (int)startX + " " + (int)startY + " "
                           + (int)endX + " " + (int)endY + " " + durationMs;
-
                   try {
-                      // With Shizuku
-                      Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
-                      p.waitFor();
+                      Runtime.getRuntime().exec(new String[]{"su", "-c", cmd}).waitFor();
                       Log.d(TAG, "Aim swipe executed");
                   } catch (Exception e) {
                       Log.e(TAG, "Swipe failed", e);
                   }
               }
 
-              /**
-               * Apply system optimizations for touch, DPI, animations, DNS, etc.
-               * Requires root/Shizuku.
-               */
               public static void applySystemOptimizations() {
                   String[] commands = {
                       "settings put system peak_refresh_rate 120",
@@ -268,10 +245,9 @@ jobs:
                       "settings put system view.touch_slop 0",
                       "settings put global private_dns_mode hostname",
                       "settings put global private_dns_specifier 1.1.1.1.cloudflare-dns.com",
-                      "wm size 720x1600",   // optional, may be removed if it causes UI issues
-                      "wm density 560"       // adjust DPI
+                      "wm size 720x1600",
+                      "wm density 560"
                   };
-
                   for (String cmd : commands) {
                       try {
                           Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
@@ -283,69 +259,183 @@ jobs:
           }
           EOF
 
-      - name: Download Gradle 7.0.2
-        id: gradle
-        run: |
-          set -euo pipefail
-          VER="7.0.2"
-          URL="https://services.gradle.org/distributions/gradle-${VER}-bin.zip"
-          curl -L "$URL" -o gradle.zip
-          rm -rf /tmp/gradle-dist
-          mkdir -p /tmp/gradle-dist
-          unzip -q gradle.zip -d /tmp/gradle-dist
-          GRADLE_BIN="$(find /tmp/gradle-dist -maxdepth 3 -type f -path '*/bin/gradle' -print -quit)"
-          chmod +x "$GRADLE_BIN"
-          echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
-
-      - name: Build debug APK (force repos, no wrapper)
+      - name: Replace MainActivity.java with full version (including MP40)
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
-          set -euo pipefail
+          mkdir -p app/src/main/java/com/assistive/filter
+          cat > app/src/main/java/com/assistive/filter/MainActivity.java <<'EOF'
+          package com.assistive.filter;
 
-          rm -f local.properties
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          import android.Manifest;
+          import android.app.Activity;
+          import android.app.AlertDialog;
+          import android.content.Context;
+          import android.content.DialogInterface;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.content.pm.PackageManager;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.text.InputType;
+          import android.util.Log;
+          import android.view.View;
+          import android.view.inputmethod.InputMethodManager;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.Toast;
 
-          cat > /tmp/init.gradle <<'EOF'
-          gradle.beforeProject { p ->
-            p.buildscript.repositories.clear()
-            p.buildscript.repositories {
-              google()
-              mavenCentral()
-              maven { url "https://jitpack.io" }
-            }
-            p.repositories.clear()
-            p.repositories {
-              google()
-              mavenCentral()
-              maven { url "https://jitpack.io" }
-            }
-          }
-          EOF
+          import rikka.shizuku.Shizuku;
 
-          set -o pipefail
-          "${{ steps.gradle.outputs.gradle_bin }}" -I /tmp/init.gradle --no-daemon --stacktrace --info ":app:assembleDebug" 2>&1 | tee /tmp/gradle_build.log
+          public final class MainActivity extends Activity {
+              private static final int REQ_SHIZUKU = 10001;
+              private static final int REQ_NOTIF = 10;
+              private static final int REQ_LENS_CAPTURE = 20002;
+              private static final int REQ_PICK_PRIORITY = 30001;
 
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log
-          path: /tmp/gradle_build.log
+              private static final String PREFS = "assistive_prefs";
+              private static final String KEY_POINTER_SPEED = "pointer_speed";
+              private static final String KEY_PRIORITY_PATHS = "priority_paths";
+              private static final String KEY_PRIORITY_WEIGHT_PREFIX = "priority_w_";
 
-      - name: Find APK
-        id: find_apk
-        run: |
-          set -euo pipefail
-          APK="$(find project -type f -name '*.apk' -path '*/build/outputs/apk/*' -print -quit)"
-          if [ -z "${APK:-}" ]; then
-            echo "Không tìm thấy APK"
-            find project -type f -name '*.apk' -print || true
-            exit 1
-          fi
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+              private Button btnPointerSpeed;
+              private Button btnApiToggle;
+              private Button btnApiKey;
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-apk
-          path: ${{ steps.find_apk.outputs.apk_path }}
+              private int lensResultCode;
+              private Intent lensResultData;
+
+              private final Shizuku.OnRequestPermissionResultListener shizukuPermListener =
+                  new Shizuku.OnRequestPermissionResultListener() {
+                      @Override
+                      public void onRequestPermissionResult(int requestCode, int grantResult) {
+                          if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                              Toast.makeText(MainActivity.this, "Đã cấp quyền Shizuku", Toast.LENGTH_SHORT).show();
+                              try { ShizukuPointerSpeedController.connect(MainActivity.this); } catch (Throwable ignore) {}
+                              try { ShizukuDpiController.connect(MainActivity.this); } catch (Throwable ignore) {}
+                          } else {
+                              Toast.makeText(MainActivity.this, "Bạn chưa cấp quyền Shizuku", Toast.LENGTH_SHORT).show();
+                          }
+                          updatePointerSpeedText();
+                      }
+                  };
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_main);
+
+                  try {
+                      Shizuku.addRequestPermissionResultListener(shizukuPermListener);
+                  } catch (Throwable ignore) {}
+
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+                  }
+
+                  Button btnOverlay = findViewById(R.id.btnOverlay);
+                  Button btnStart = findViewById(R.id.btnStart);
+                  Button btnEdit = findViewById(R.id.btnEdit);
+                  Button btnStop = findViewById(R.id.btnStop);
+                  Button btnShizuku = findViewById(R.id.btnShizuku);
+                  btnPointerSpeed = findViewById(R.id.btnPointerSpeed);
+                  Button btnScreenSensitivity = findViewById(R.id.btnScreenSensitivity);
+                  Button btnXSensitivity = findViewById(R.id.btnXSensitivity);
+                  Button btnHeightPlus20 = findViewById(R.id.btnHeightPlus20);
+                  Button btnHeightMinus20 = findViewById(R.id.btnHeightMinus20);
+                  Button btnReduceLag = findViewById(R.id.btnReduceLag);
+                  Button btnEnhanceLens = findViewById(R.id.btnEnhanceLens);
+                  Button btnLensEdit = findViewById(R.id.btnLensEdit);
+                  btnApiToggle = findViewById(R.id.btnApiToggle);
+                  btnApiKey = findViewById(R.id.btnApiKey);
+                  Button btnDpi1 = findViewById(R.id.btnDpi1);
+                  Button btnDpi2 = findViewById(R.id.btnDpi2);
+                  Button btnDpi3 = findViewById(R.id.btnDpi3);
+                  Button btnDpi4 = findViewById(R.id.btnDpi4);
+                  Button btnDpi5 = findViewById(R.id.btnDpi5);
+                  Button btnDpi6 = findViewById(R.id.btnDpi6);
+                  Button btnDpi7 = findViewById(R.id.btnDpi7);
+                  Button btnDpi8 = findViewById(R.id.btnDpi8);
+                  Button btnDpi9 = findViewById(R.id.btnDpi9);
+                  Button btnDpi10 = findViewById(R.id.btnDpi10);
+                  Button btnPickPriority = findViewById(R.id.btnPickPriority);
+                  Button btnFloatingControl = findViewById(R.id.btnFloatingControl);
+                  Button btnMovableAim = findViewById(R.id.btnMovableAim);
+                  Button btnSystemTuner = findViewById(R.id.btnSystemTuner);
+                  Button btnFullRed = findViewById(R.id.btnFullRed);
+                  Button btnMP40 = findViewById(R.id.btnMP40);
+
+                  btnFloatingControl.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          Intent i = new Intent(MainActivity.this, FloatingControlService.class);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                          else startService(i);
+                          Toast.makeText(MainActivity.this, "Đã bật nút nổi", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+
+                  btnMovableAim.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          Intent i = new Intent(MainActivity.this, MovableAimButtonService.class);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                          else startService(i);
+                          Toast.makeText(MainActivity.this, "Đã bật nút aim di động", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+
+                  btnSystemTuner.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          Intent i = new Intent(MainActivity.this, SystemTunerService.class);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                          else startService(i);
+                          Toast.makeText(MainActivity.this, "Đã bật nút tối ưu hệ thống", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+
+                  btnFullRed.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          Intent i = new Intent(MainActivity.this, FullRedModeService.class);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                          else startService(i);
+                          Toast.makeText(MainActivity.this, "🔥 Đã bật Full Red Mode 🔥", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+
+                  btnMP40.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          if (!ensureAllPermissions()) return;
+                          executeMP40Optimizations();
+                      }
+                  });
+
+                  btnOverlay.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { openOverlaySettings(); }
+                  });
+                  btnStart.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          if (!ensureAllPermissions()) return;
+                          startSvc(filteroverlayservice.ACTION_START_LOCKED);
+                      }
+                  });
+                  btnEdit.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          if (!ensureAllPermissions()) return;
+                          startSvc(filteroverlayservice.ACTION_START_EDIT);
+                      }
+                  });
+                  btnStop.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          Intent i = new Intent(MainActivity.this, filteroverlayservice.class);
+                          i.setAction(filteroverlayservice.ACTION_STOP);
+                          startService(i);
+                      }
+                  });
+                  btnShizuku.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { connectShizuku(); }
+                  });
