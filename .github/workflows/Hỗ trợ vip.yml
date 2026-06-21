@@ -1,4 +1,4 @@
-name: Build APK from ZIP (Full Fix + MP40)
+name: Build APK (Final Fix)
 
 on:
   workflow_dispatch:
@@ -195,7 +195,7 @@ jobs:
             echo "}" >> "$STUB"
           fi
 
-      - name: Create AimController.java with aiming algorithm
+      - name: Create AimController.java
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           mkdir -p app/src/main/java/com/assistive/filter
@@ -259,7 +259,7 @@ jobs:
           }
           EOF
 
-      - name: Replace MainActivity.java with full version (including MP40)
+      - name: Write MainActivity.java with MP40 and fixed Shizuku calls
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
           mkdir -p app/src/main/java/com/assistive/filter
@@ -944,11 +944,6 @@ jobs:
               // =============================
           }
           EOF
-
-      - name: Fix Shizuku.newProcess calls (remove null, null) - already done in the new file but ensure
-        working-directory: ${{ steps.unzip.outputs.root_dir }}
-        run: |
-          sed -i 's/Shizuku\.newProcess(\(.*\)), null, null)/Shizuku.newProcess(\1))/g' app/src/main/java/com/assistive/filter/MainActivity.java || true
 
       - name: Replace activity_main.xml with MP40 button
         working-directory: ${{ steps.unzip.outputs.root_dir }}
