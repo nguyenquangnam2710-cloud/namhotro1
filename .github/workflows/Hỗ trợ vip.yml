@@ -945,6 +945,13 @@ jobs:
           }
           EOF
 
+      # ----- THÊM BƯỚC SỬA LỖI Shizuku.newProcess -----
+      - name: Fix Shizuku.newProcess calls (add null, null)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          find app/src/main/java -type f -name "*.java" -exec perl -i -pe 's/Shizuku\.newProcess\(([^)]*)\)/Shizuku.newProcess($1, null, null)/g' {} \;
+      # --------------------------------------------------
+
       - name: Replace activity_main.xml with MP40 button
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
