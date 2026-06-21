@@ -945,12 +945,46 @@ jobs:
           }
           EOF
 
-      # ----- THÊM BƯỚC SỬA LỖI Shizuku.newProcess -----
-      - name: Fix Shizuku.newProcess calls (add null, null)
+      # ---- Bổ sung: Tạo ShizukuHelper và thay thế lệnh gọi ----
+      - name: Create ShizukuHelper.java
         working-directory: ${{ steps.unzip.outputs.root_dir }}
         run: |
-          find app/src/main/java -type f -name "*.java" -exec perl -i -pe 's/Shizuku\.newProcess\(([^)]*)\)/Shizuku.newProcess($1, null, null)/g' {} \;
-      # --------------------------------------------------
+          mkdir -p app/src/main/java/com/assistive/filter
+          cat > app/src/main/java/com/assistive/filter/ShizukuHelper.java <<'EOF'
+          package com.assistive.filter;
+
+          import rikka.shizuku.Shizuku;
+          import java.lang.reflect.Method;
+
+          public class ShizukuHelper {
+              public static void runCommand(String[] cmd) {
+                  try {
+                      Method m = Shizuku.class.getDeclaredMethod("newProcess", String[].class, String[].class, String.class);
+                      m.setAccessible(true);
+                      m.invoke(null, (Object) cmd, null, null);
+                  } catch (Exception e) {
+                      // fallback
+                      try {
+                          Runtime.getRuntime().exec(cmd);
+                      } catch (Exception ignored) {}
+                  }
+              }
+          }
+          EOF
+
+      - name: Replace all Shizuku.newProcess with ShizukuHelper.runCommand
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          # Thêm import vào các file có sử dụng Shizuku.newProcess
+          for file in $(grep -rl 'Shizuku\.newProcess' app/src/main/java --include="*.java" 2>/dev/null || true); do
+            if ! grep -q 'import com.assistive.filter.ShizukuHelper;' "$file"; then
+              sed -i '/^package/a import com.assistive.filter.ShizukuHelper;' "$file"
+            fi
+          done
+
+          # Thay thế tất cả Shizuku.newProcess( thành ShizukuHelper.runCommand(
+          find app/src/main/java -type f -name "*.java" -exec perl -i -pe 's/Shizuku\.newProcess\(/ShizukuHelper.runCommand(/g' {} \;
+      # ---------------------------------------------------------
 
       - name: Replace activity_main.xml with MP40 button
         working-directory: ${{ steps.unzip.outputs.root_dir }}
