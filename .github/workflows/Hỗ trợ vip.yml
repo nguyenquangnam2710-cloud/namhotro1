@@ -1,4 +1,4 @@
-name: Build APK from ZIP (OpenCV + MP40 full optimize)
+name: Build APK from ZIP (OpenCV + MP40 + Debug)
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y unzip dos2unix curl rsync
+          sudo apt-get install -y unzip dos2unix curl rsync tree
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -439,3 +439,808 @@ jobs:
                   btnShizuku.setOnClickListener(new View.OnClickListener() {
                       @Override public void onClick(View v) { connectShizuku(); }
                   });
+                  btnPointerSpeed.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { changePointerSpeed(+1); }
+                  });
+                  btnPointerSpeed.setOnLongClickListener(new View.OnLongClickListener() {
+                      @Override public boolean onLongClick(View v) { changePointerSpeed(-1); return true; }
+                  });
+                  btnScreenSensitivity.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { showScreenSensitivityDialog(); }
+                  });
+                  btnXSensitivity.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { showXSensitivityDialog(); }
+                  });
+                  btnHeightPlus20.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { applyHeightPlus20(); }
+                  });
+                  btnHeightMinus20.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { applyHeightMinus20(); }
+                  });
+                  btnReduceLag.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { applyReduceLag(); }
+                  });
+                  btnEnhanceLens.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          if (!ensureAllPermissions()) return;
+                          startLensCapture();
+                      }
+                  });
+                  btnEnhanceLens.setOnLongClickListener(new View.OnLongClickListener() {
+                      @Override public boolean onLongClick(View v) { stopEnhanceLens(); return true; }
+                  });
+                  btnLensEdit.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          if (!ensureAllPermissions()) return;
+                          startLensRing();
+                      }
+                  });
+                  btnLensEdit.setOnLongClickListener(new View.OnLongClickListener() {
+                      @Override public boolean onLongClick(View v) { stopLensRing(); return true; }
+                  });
+                  btnApiToggle.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          boolean on = ApiConfig.isEnabled(MainActivity.this);
+                          ApiConfig.setEnabled(MainActivity.this, !on);
+                          updateApiUi();
+                      }
+                  });
+                  btnApiKey.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) { showApiKeyDialog(); }
+                  });
+                  btnPickPriority.setOnClickListener(new View.OnClickListener() {
+                      @Override public void onClick(View v) {
+                          Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                          i.addCategory(Intent.CATEGORY_OPENABLE);
+                          i.setType("image/*");
+                          i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                          startActivityForResult(i, REQ_PICK_PRIORITY);
+                      }
+                  });
+                  btnDpi1.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(360); }});
+                  btnDpi2.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(390); }});
+                  btnDpi3.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(420); }});
+                  btnDpi4.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(450); }});
+                  btnDpi5.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(480); }});
+                  btnDpi6.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(510); }});
+                  btnDpi7.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { resetDpi(); }});
+                  btnDpi8.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(720); }});
+                  btnDpi9.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(920); }});
+                  btnDpi10.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { applyDpi(620); }});
+
+                  updatePointerSpeedText();
+                  updateApiUi();
+              }
+
+              // ============ Các phương thức hỗ trợ (giữ nguyên) ============
+              private void updateApiUi() {
+                  if (btnApiToggle != null) {
+                      boolean on = ApiConfig.isEnabled(this);
+                      btnApiToggle.setText(on ? "Public API: ON" : "Public API: OFF");
+                  }
+                  if (btnApiKey != null) {
+                      String k = ApiConfig.getKey(this);
+                      btnApiKey.setText(k.length() == 0 ? "Đặt API key (đang trống)" : "Đổi API key");
+                  }
+              }
+
+              private void showApiKeyDialog() {
+                  final EditText et = new EditText(this);
+                  et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                  et.setSingleLine(true);
+                  String cur = ApiConfig.getKey(this);
+                  et.setText(cur);
+                  et.setSelection(et.getText() != null ? et.getText().length() : 0);
+                  final AlertDialog d = new AlertDialog.Builder(this)
+                      .setTitle("API key")
+                      .setView(et)
+                      .setNegativeButton("Hủy", null)
+                      .setPositiveButton("Lưu", new DialogInterface.OnClickListener() {
+                          @Override public void onClick(DialogInterface dialog, int which) {
+                              String s = et.getText() != null ? et.getText().toString() : "";
+                              ApiConfig.setKey(MainActivity.this, s);
+                              updateApiUi();
+                          }
+                      })
+                      .create();
+                  d.setOnShowListener(new DialogInterface.OnShowListener() {
+                      @Override public void onShow(DialogInterface dialog) {
+                          InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                          if (imm != null) imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT);
+                      }
+                  });
+                  d.show();
+              }
+
+              private void startLensRing() {
+                  try {
+                      Intent v = new Intent(this, LensOverlayService.class);
+                      v.setAction(LensOverlayService.ACTION_START);
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(v);
+                      else startService(v);
+                  } catch (Throwable t) {
+                      Toast.makeText(this, "startService lỗi: " + t.getClass().getSimpleName(), Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void stopLensRing() {
+                  try {
+                      Intent v = new Intent(this, LensOverlayService.class);
+                      v.setAction(LensOverlayService.ACTION_STOP);
+                      startService(v);
+                  } catch (Throwable ignore) {}
+              }
+
+              private void startLensCapture() {
+                  android.media.projection.MediaProjectionManager mpm =
+                      (android.media.projection.MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                  if (mpm == null) {
+                      Toast.makeText(this, "Không có MediaProjection", Toast.LENGTH_SHORT).show();
+                      return;
+                  }
+                  startActivityForResult(mpm.createScreenCaptureIntent(), REQ_LENS_CAPTURE);
+              }
+
+              private void startEnhanceLens(int resultCode, Intent data) {
+                  Intent v = new Intent(this, enhancelensservice.class);
+                  v.setAction(enhancelensservice.ACTION_START_LOCKED);
+                  v.putExtra(enhancelensservice.EXTRA_RESULT_CODE, resultCode);
+                  v.putExtra(enhancelensservice.EXTRA_RESULT_DATA, data);
+                  try {
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(v);
+                      else startService(v);
+                  } catch (Throwable t) {
+                      Toast.makeText(this, "startService lỗi: " + t.getClass().getSimpleName(), Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void stopEnhanceLens() {
+                  try {
+                      Intent v = new Intent(this, enhancelensservice.class);
+                      v.setAction(enhancelensservice.ACTION_STOP);
+                      startService(v);
+                  } catch (Throwable ignore) {}
+              }
+
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == REQ_PICK_PRIORITY) {
+                      if (resultCode != RESULT_OK || data == null) return;
+                      try {
+                          java.io.File dir = new java.io.File(getFilesDir(), "priority_templates");
+                          if (!dir.exists()) dir.mkdirs();
+                          SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+                          java.util.Set<String> set = sp.getStringSet(KEY_PRIORITY_PATHS, null);
+                          java.util.Set<String> paths = new java.util.HashSet<>();
+                          if (set != null) paths.addAll(set);
+                          int added = 0, updated = 0;
+                          android.content.ClipData clip = data.getClipData();
+                          if (clip != null && clip.getItemCount() > 0) {
+                              for (int i = 0; i < clip.getItemCount(); i++) {
+                                  Uri u = clip.getItemAt(i).getUri();
+                                  if (u == null) continue;
+                                  byte[] bytes = readAllBytes(u);
+                                  if (bytes == null || bytes.length < 16) continue;
+                                  String hex = sha256Hex(bytes);
+                                  if (hex == null || hex.length() < 16) continue;
+                                  String name = "tpl_" + hex.substring(0, 16) + ".img";
+                                  java.io.File f = new java.io.File(dir, name);
+                                  boolean existed = f.exists() && f.length() > 0;
+                                  if (!existed) {
+                                      java.io.FileOutputStream os = new java.io.FileOutputStream(f);
+                                      os.write(bytes);
+                                      os.close();
+                                      added++;
+                                  } else { updated++; }
+                                  paths.add(f.getAbsolutePath());
+                                  String wk = KEY_PRIORITY_WEIGHT_PREFIX + f.getName();
+                                  float w = sp.getFloat(wk, 0f);
+                                  if (w <= 0f) w = 1f;
+                                  else w = Math.min(10f, w + 1f);
+                                  sp.edit().putFloat(wk, w).apply();
+                              }
+                          } else {
+                              Uri u = data.getData();
+                              if (u != null) {
+                                  byte[] bytes = readAllBytes(u);
+                                  if (bytes != null && bytes.length >= 16) {
+                                      String hex = sha256Hex(bytes);
+                                      if (hex != null && hex.length() >= 16) {
+                                          String name = "tpl_" + hex.substring(0, 16) + ".img";
+                                          java.io.File f = new java.io.File(dir, name);
+                                          boolean existed = f.exists() && f.length() > 0;
+                                          if (!existed) {
+                                              java.io.FileOutputStream os = new java.io.FileOutputStream(f);
+                                              os.write(bytes);
+                                              os.close();
+                                              added++;
+                                          } else { updated++; }
+                                          paths.add(f.getAbsolutePath());
+                                          String wk = KEY_PRIORITY_WEIGHT_PREFIX + f.getName();
+                                          float w = sp.getFloat(wk, 0f);
+                                          if (w <= 0f) w = 1f;
+                                          else w = Math.min(10f, w + 1f);
+                                          sp.edit().putFloat(wk, w).apply();
+                                      }
+                                  }
+                              }
+                          }
+                          sp.edit().putStringSet(KEY_PRIORITY_PATHS, paths).apply();
+                          Toast.makeText(this, "Đã thêm: " + added + ", tăng w: " + updated, Toast.LENGTH_SHORT).show();
+                      } catch (Throwable ignore) {}
+                      return;
+                  }
+
+                  if (requestCode == REQ_LENS_CAPTURE) {
+                      if (resultCode != RESULT_OK || data == null) {
+                          Toast.makeText(this, "Bạn chưa cấp quyền chụp màn hình", Toast.LENGTH_SHORT).show();
+                          return;
+                      }
+                      lensResultCode = resultCode;
+                      lensResultData = new Intent(data);
+                      startEnhanceLens(lensResultCode, lensResultData);
+                  }
+              }
+
+              private byte[] readAllBytes(Uri u) {
+                  try {
+                      java.io.InputStream is = getContentResolver().openInputStream(u);
+                      if (is == null) return null;
+                      java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+                      byte[] buf = new byte[8192];
+                      int n;
+                      while ((n = is.read(buf)) > 0) os.write(buf, 0, n);
+                      is.close();
+                      return os.toByteArray();
+                  } catch (Throwable t) { return null; }
+              }
+
+              private String sha256Hex(byte[] data) {
+                  try {
+                      java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                      byte[] h = md.digest(data);
+                      StringBuilder sb = new StringBuilder();
+                      for (int i = 0; i < h.length; i++) {
+                          int v = h[i] & 255;
+                          if (v < 16) sb.append('0');
+                          sb.append(Integer.toHexString(v));
+                      }
+                      return sb.toString();
+                  } catch (Throwable t) { return null; }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  try { Shizuku.removeRequestPermissionResultListener(shizukuPermListener); } catch (Throwable ignore) {}
+                  super.onDestroy();
+              }
+
+              private boolean ensureAllPermissions() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      if (!Settings.canDrawOverlays(this)) {
+                          Toast.makeText(this, "Cần quyền Overlay", Toast.LENGTH_SHORT).show();
+                          openOverlaySettings();
+                          return false;
+                      }
+                  }
+                  if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                      Toast.makeText(this, "Cần quyền Shizuku", Toast.LENGTH_SHORT).show();
+                      connectShizuku();
+                      return false;
+                  }
+                  return true;
+              }
+
+              private void openOverlaySettings() {
+                  Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                          Uri.parse("package:" + getPackageName()));
+                  startActivity(intent);
+              }
+
+              private void connectShizuku() {
+                  if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                      Toast.makeText(this, "Shizuku đã sẵn sàng", Toast.LENGTH_SHORT).show();
+                      return;
+                  }
+                  try {
+                      Shizuku.requestPermission(REQ_SHIZUKU);
+                  } catch (Exception e) {
+                      Toast.makeText(this, "Hãy cài đặt Shizuku", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void changePointerSpeed(int delta) {
+                  SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+                  int current = sp.getInt(KEY_POINTER_SPEED, 7);
+                  current += delta;
+                  if (current < 0) current = 0;
+                  if (current > 7) current = 7;
+                  sp.edit().putInt(KEY_POINTER_SPEED, current).apply();
+                  try {
+                      Shizuku.newProcess(new String[]{"sh", "-c", "settings put system pointer_speed " + current}, null, null);
+                  } catch (Exception ignore) {}
+                  updatePointerSpeedText();
+              }
+
+              private void updatePointerSpeedText() {
+                  if (btnPointerSpeed == null) return;
+                  SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+                  int speed = sp.getInt(KEY_POINTER_SPEED, 7);
+                  btnPointerSpeed.setText("Tốc độ con trỏ: " + speed);
+              }
+
+              private void showScreenSensitivityDialog() {
+                  final EditText et = new EditText(this);
+                  et.setInputType(InputType.TYPE_CLASS_NUMBER);
+                  et.setHint("Nhập độ nhạy (pixel)");
+                  new AlertDialog.Builder(this)
+                      .setTitle("Độ nhạy màn")
+                      .setView(et)
+                      .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                          @Override public void onClick(DialogInterface dialog, int which) {
+                              try {
+                                  int val = Integer.parseInt(et.getText().toString());
+                                  Intent i = new Intent("com.assistive.filter.API_SET_GAIN");
+                                  i.putExtra("gain", val);
+                                  sendBroadcast(i);
+                              } catch (Exception ignore) {}
+                          }
+                      })
+                      .setNegativeButton("Hủy", null)
+                      .show();
+              }
+
+              private void showXSensitivityDialog() {
+                  final EditText et = new EditText(this);
+                  et.setInputType(InputType.TYPE_CLASS_NUMBER);
+                  et.setHint("Nhập phần trăm độ nhạy X");
+                  new AlertDialog.Builder(this)
+                      .setTitle("Độ nhạy X (%)")
+                      .setView(et)
+                      .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                          @Override public void onClick(DialogInterface dialog, int which) {
+                              try {
+                                  int val = Integer.parseInt(et.getText().toString());
+                                  Intent i = new Intent("com.assistive.filter.API_SET_X_SENSITIVITY");
+                                  i.putExtra("x_sensitivity", val);
+                                  sendBroadcast(i);
+                              } catch (Exception ignore) {}
+                          }
+                      })
+                      .setNegativeButton("Hủy", null)
+                      .show();
+              }
+
+              private void applyHeightPlus20() {
+                  Intent i = new Intent("com.assistive.filter.API_HEIGHT_PLUS_20");
+                  sendBroadcast(i);
+                  Toast.makeText(this, "Đã tăng Y +20", Toast.LENGTH_SHORT).show();
+              }
+
+              private void applyHeightMinus20() {
+                  Intent i = new Intent("com.assistive.filter.API_HEIGHT_MINUS_20");
+                  sendBroadcast(i);
+                  Toast.makeText(this, "Đã giảm Y -20", Toast.LENGTH_SHORT).show();
+              }
+
+              private void applyReduceLag() {
+                  try {
+                      Shizuku.newProcess(new String[]{"sh", "-c",
+                          "settings put global window_animation_scale 0;" +
+                          "settings put global transition_animation_scale 0;" +
+                          "settings put global animator_duration_scale 0;" +
+                          "settings put global disable_hw_overlays 1"}, null, null);
+                      Toast.makeText(this, "Đã giảm lag", Toast.LENGTH_SHORT).show();
+                  } catch (Exception e) {
+                      Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void applyDpi(int dpi) {
+                  try {
+                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density " + dpi}, null, null);
+                      Toast.makeText(this, "Đã đặt DPI " + dpi, Toast.LENGTH_SHORT).show();
+                  } catch (Exception e) {
+                      Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void resetDpi() {
+                  try {
+                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density reset"}, null, null);
+                      Toast.makeText(this, "Đã reset DPI", Toast.LENGTH_SHORT).show();
+                  } catch (Exception e) {
+                      Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void startSvc(String action) {
+                  Intent i = new Intent(this, filteroverlayservice.class);
+                  i.setAction(action);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                  else startService(i);
+              }
+
+              // ============ MP40 ============
+              private void executeMP40Optimizations() {
+                  if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                      Toast.makeText(this, "Shizuku chưa sẵn sàng. Hãy ghép nối Shizuku trước!", Toast.LENGTH_LONG).show();
+                      return;
+                  }
+
+                  String apnInsert = "content insert --uri content://telephony/carriers" +
+                      " --bind name:s:'MP40_OPTIMIZED'" +
+                      " --bind apn:s:'internet'" +
+                      " --bind type:s:'default,supl,dun,hipri'" +
+                      " --bind protocol:s:'IPv4/IPv6'" +
+                      " --bind roaming_protocol:s:'IPv4'" +
+                      " --bind bearer:s:'LTE'" +
+                      " --bind mvno_type:s:'None'" +
+                      " --bind mtu:s:'1460'";
+
+                  String[] commands = {
+                      apnInsert,
+                      "settings put global preferred_network_mode 11",
+                      "settings put global private_dns_mode hostname",
+                      "settings put global private_dns_specifier 1.1.1.1.cloudflare-dns.com",
+                      "settings put global mobile_data_always_on 1",
+                      "settings put system tether_dun_required 0",
+                      "echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 || true",
+                      "echo 1 > /proc/sys/net/ipv6/conf/default/disable_ipv6 || true",
+                      "ndc resolver clearnetdns wlan0 || true",
+                      "ndc resolver clearnetdns rmnet_data0 || true",
+                      "ip link set dev wlan0 mtu 1450 || true",
+                      "ip link set dev rmnet_data0 mtu 1450 || true",
+                      "settings put global window_animation_scale 0",
+                      "settings put global transition_animation_scale 0",
+                      "settings put global animator_duration_scale 0",
+                      "wm density 550",
+                      "settings put system peak_refresh_rate 120",
+                      "settings put system min_refresh_rate 120",
+                      "settings put secure enabled_accessibility_services 0",
+                      "settings put system touch_and_hold_delay 500",
+                      "settings put secure accessibility_gesture_swipe_up focus_first_item",
+                      "settings put secure accessibility_gesture_swipe_down focus_first_item",
+                      "settings put secure accessibility_gesture_swipe_left focus_first_item",
+                      "settings put secure accessibility_gesture_swipe_right focus_first_item",
+                      "settings put secure accessibility_custom_gestures_enabled 1",
+                      "settings put secure accessibility_audio_ducking 0",
+                      "settings put secure accessibility_service_enabled 0",
+                      "settings put secure accessibility_auto_scan_enabled 1",
+                      "settings put secure accessibility_auto_scan_delay 50",
+                      "settings put secure accessibility_auto_scan_delay_first_item 20",
+                      "settings put secure accessibility_number_of_scans 2",
+                      "settings put secure accessibility_scanning_method linear",
+                      "settings put secure accessibility_point_scan_enabled 1",
+                      "settings put system long_press_timeout 400",
+                      "settings put secure touch_blocking_period 0",
+                      "settings put secure dwell_handling_enabled 0",
+                      "settings put secure dwell_delay 0",
+                      "settings put system pointer_speed 7",
+                      "settings put secure touch_exploration_enabled 0",
+                      "settings put system user_refresh_rate 120",
+                      "settings put system touch.pressure.scale 0.001",
+                      "settings put system windows_mgr.max_events_per_sec 120",
+                      "settings put system touch.size.calibration geometric",
+                      "settings put system touch.size.scale 1",
+                      "settings put system touch.size.bias 0",
+                      "settings put system touch.pressure.calibration amplitude",
+                      "settings put global debug.sf.nobootanimation 1",
+                      "settings put global disable_hw_overlays 1",
+                      "settings put global force_msaa_4x 0",
+                      "settings put global gpu_rendering_enabled 1"
+                  };
+
+                  for (String cmd : commands) {
+                      try {
+                          Shizuku.newProcess(new String[]{"sh", "-c", cmd}, null, null);
+                      } catch (Exception e) {
+                          Log.e("MP40", "Lỗi: " + cmd, e);
+                      }
+                  }
+                  Toast.makeText(this, "MP40: Tất cả tối ưu đã kích hoạt!", Toast.LENGTH_SHORT).show();
+              }
+              // =============================
+          }
+          EOF
+
+      - name: Replace activity_main.xml with MP40 button
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          mkdir -p app/src/main/res/layout
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="16dp">
+
+                  <Button
+                      android:id="@+id/btnOverlay"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Cấp quyền Overlay" />
+
+                  <Button
+                      android:id="@+id/btnStart"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="BẬT (khóa)" />
+
+                  <Button
+                      android:id="@+id/btnEdit"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="CHỈNH (kéo/zoom)" />
+
+                  <Button
+                      android:id="@+id/btnStop"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="TẮT" />
+
+                  <Button
+                      android:id="@+id/btnShizuku"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Ghép nối Shizuku" />
+
+                  <Button
+                      android:id="@+id/btnPointerSpeed"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Tốc độ con trỏ: 0" />
+
+                  <Button
+                      android:id="@+id/btnApiToggle"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Public API: OFF" />
+
+                  <Button
+                      android:id="@+id/btnApiKey"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Đặt API key" />
+
+                  <Button
+                      android:id="@+id/btnScreenSensitivity"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Độ nhạy màn (nhập)" />
+
+                  <Button
+                      android:id="@+id/btnXSensitivity"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Độ nhạy X (%)" />
+
+                  <Button
+                      android:id="@+id/btnHeightPlus20"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Tăng Y +20" />
+
+                  <Button
+                      android:id="@+id/btnHeightMinus20"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Giảm Y -20" />
+
+                  <Button
+                      android:id="@+id/btnReduceLag"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Giảm lag" />
+
+                  <Button
+                      android:id="@+id/btnDpi1"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 360" />
+
+                  <Button
+                      android:id="@+id/btnDpi2"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 390" />
+
+                  <Button
+                      android:id="@+id/btnDpi3"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 420" />
+
+                  <Button
+                      android:id="@+id/btnDpi4"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 450" />
+
+                  <Button
+                      android:id="@+id/btnDpi5"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 480" />
+
+                  <Button
+                      android:id="@+id/btnDpi6"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 510" />
+
+                  <Button
+                      android:id="@+id/btnDpi7"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Reset DPI" />
+
+                  <Button
+                      android:id="@+id/btnDpi8"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 720" />
+
+                  <Button
+                      android:id="@+id/btnDpi9"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 920" />
+
+                  <Button
+                      android:id="@+id/btnDpi10"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="DPI 620" />
+
+                  <Button
+                      android:id="@+id/btnEnhanceLens"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Bật Lens (cố định giữa màn hình)" />
+
+                  <Button
+                      android:id="@+id/btnLensEdit"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Lens (kéo/zoom)" />
+
+                  <Button
+                      android:id="@+id/btnPickPriority"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Chọn ảnh ưu tiên" />
+
+                  <Button
+                      android:id="@+id/btnFloatingControl"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Bật nút nổi (trong game)" />
+
+                  <Button
+                      android:id="@+id/btnMovableAim"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Bật nút aim di động" />
+
+                  <Button
+                      android:id="@+id/btnSystemTuner"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Bật tối ưu hệ thống (⚡)" />
+
+                  <Button
+                      android:id="@+id/btnFullRed"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="🔥 Bật Full Red Mode 🔥" />
+
+                  <!-- Nút MP40 thêm vào đây -->
+                  <Button
+                      android:id="@+id/btnMP40"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="20dp"
+                      android:backgroundTint="#FFD700"
+                      android:text="⚡ MP40 (1 chạm tối ưu toàn bộ) ⚡"
+                      android:textColor="#000000"
+                      android:textSize="16sp"
+                      android:textStyle="bold" />
+
+              </LinearLayout>
+          </ScrollView>
+          EOF
+
+      - name: Download Gradle 7.0.2
+        id: gradle
+        run: |
+          set -euo pipefail
+          VER="7.0.2"
+          URL="https://services.gradle.org/distributions/gradle-${VER}-bin.zip"
+          curl -L "$URL" -o gradle.zip
+          rm -rf /tmp/gradle-dist
+          mkdir -p /tmp/gradle-dist
+          unzip -q gradle.zip -d /tmp/gradle-dist
+          GRADLE_BIN="$(find /tmp/gradle-dist -maxdepth 3 -type f -path '*/bin/gradle' -print -quit)"
+          chmod +x "$GRADLE_BIN"
+          echo "gradle_bin=$GRADLE_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Build debug APK (force repos, no wrapper)
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          set -euo pipefail
+
+          rm -f local.properties
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+          cat > /tmp/init.gradle <<'EOF'
+          gradle.beforeProject { p ->
+            p.buildscript.repositories.clear()
+            p.buildscript.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+            p.repositories.clear()
+            p.repositories {
+              google()
+              mavenCentral()
+              maven { url "https://jitpack.io" }
+            }
+          }
+          EOF
+
+          set -o pipefail
+          "${{ steps.gradle.outputs.gradle_bin }}" -I /tmp/init.gradle --no-daemon --stacktrace --info ":app:assembleDebug" 2>&1 | tee /tmp/gradle_build.log
+
+      - name: Debug APK location
+        if: always()
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          echo "=== Cây thư mục app/build/outputs ==="
+          tree app/build/outputs || true
+          echo "=== Danh sách file APK ==="
+          find . -type f -name "*.apk" -print || true
+          mkdir -p /tmp/debug-output
+          find . -type f -name "*.apk" -print > /tmp/debug-output/apk-paths.txt
+          tree app/build/outputs > /tmp/debug-output/tree.txt 2>/dev/null || true
+
+      - name: Upload debug APK location
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk-location
+          path: /tmp/debug-output/
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: /tmp/gradle_build.log
+
+      - name: Find APK and upload
+        id: find_apk
+        run: |
+          set -euo pipefail
+          # Ưu tiên tìm APK debug, bỏ qua unaligned
+          APK="$(find project -type f -name '*.apk' -not -path '*/unaligned/*' -print -quit)"
+          if [ -z "${APK:-}" ]; then
+            echo "Không tìm thấy APK"
+            find project -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        if: steps.find_apk.outputs.apk_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
