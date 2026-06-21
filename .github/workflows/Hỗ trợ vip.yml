@@ -1,4 +1,4 @@
-name: Build APK from ZIP (OpenCV + MP40 + Debug)
+name: Build APK from ZIP (Full Fix + MP40)
 
 on:
   workflow_dispatch:
@@ -758,7 +758,7 @@ jobs:
                   if (current > 7) current = 7;
                   sp.edit().putInt(KEY_POINTER_SPEED, current).apply();
                   try {
-                      Shizuku.newProcess(new String[]{"sh", "-c", "settings put system pointer_speed " + current}, null, null);
+                      Shizuku.newProcess(new String[]{"sh", "-c", "settings put system pointer_speed " + current});
                   } catch (Exception ignore) {}
                   updatePointerSpeedText();
               }
@@ -830,7 +830,7 @@ jobs:
                           "settings put global window_animation_scale 0;" +
                           "settings put global transition_animation_scale 0;" +
                           "settings put global animator_duration_scale 0;" +
-                          "settings put global disable_hw_overlays 1"}, null, null);
+                          "settings put global disable_hw_overlays 1"});
                       Toast.makeText(this, "Đã giảm lag", Toast.LENGTH_SHORT).show();
                   } catch (Exception e) {
                       Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
@@ -839,7 +839,7 @@ jobs:
 
               private void applyDpi(int dpi) {
                   try {
-                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density " + dpi}, null, null);
+                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density " + dpi});
                       Toast.makeText(this, "Đã đặt DPI " + dpi, Toast.LENGTH_SHORT).show();
                   } catch (Exception e) {
                       Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
@@ -848,7 +848,7 @@ jobs:
 
               private void resetDpi() {
                   try {
-                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density reset"}, null, null);
+                      Shizuku.newProcess(new String[]{"sh", "-c", "wm density reset"});
                       Toast.makeText(this, "Đã reset DPI", Toast.LENGTH_SHORT).show();
                   } catch (Exception e) {
                       Toast.makeText(this, "Cần Shizuku", Toast.LENGTH_SHORT).show();
@@ -934,7 +934,7 @@ jobs:
 
                   for (String cmd : commands) {
                       try {
-                          Shizuku.newProcess(new String[]{"sh", "-c", cmd}, null, null);
+                          Shizuku.newProcess(new String[]{"sh", "-c", cmd});
                       } catch (Exception e) {
                           Log.e("MP40", "Lỗi: " + cmd, e);
                       }
@@ -944,6 +944,11 @@ jobs:
               // =============================
           }
           EOF
+
+      - name: Fix Shizuku.newProcess calls (remove null, null) - already done in the new file but ensure
+        working-directory: ${{ steps.unzip.outputs.root_dir }}
+        run: |
+          sed -i 's/Shizuku\.newProcess(\(.*\)), null, null)/Shizuku.newProcess(\1))/g' app/src/main/java/com/assistive/filter/MainActivity.java || true
 
       - name: Replace activity_main.xml with MP40 button
         working-directory: ${{ steps.unzip.outputs.root_dir }}
@@ -1229,7 +1234,6 @@ jobs:
         id: find_apk
         run: |
           set -euo pipefail
-          # Ưu tiên tìm APK debug, bỏ qua unaligned
           APK="$(find project -type f -name '*.apk' -not -path '*/unaligned/*' -print -quit)"
           if [ -z "${APK:-}" ]; then
             echo "Không tìm thấy APK"
