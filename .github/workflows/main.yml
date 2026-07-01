@@ -1,4 +1,4 @@
-name: Ultimate Build (All-in-One)
+name: Ultimate All-in-One Build
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -24,83 +24,266 @@ jobs:
         run: |
           for f in *.zip; do
             if [ -f "$f" ]; then
+              echo "✅ Unzipping $f"
               unzip -q "$f" -d .
               break
             fi
           done
 
-      - name: Fix 34x in ALL files
+      # ===== TẦNG 1: SỬA TRỰC TIẾP FILE BUILD.GRADLE =====
+      - name: Tier 1 - Directly fix all build.gradle files
         run: |
-          find . -type f -exec sed -i 's/34x/31/g' {} \;
-          find . -type f -exec sed -i 's/34X/31/g' {} \;
-          find . -type f -exec sed -i "s/'34x'/'31'/g" {} \;
-          find . -type f -exec sed -i 's/"34x"/"31"/g' {} \;
+          echo "🔧 Tier 1: Sửa trực tiếp build.gradle"
+          find . -name "build.gradle" -exec sed -i 's/34x/31/g' {} \;
+          find . -name "build.gradle" -exec sed -i 's/34X/31/g' {} \;
+          find . -name "build.gradle" -exec sed -i 's/compileSdk[[:space:]]*=[[:space:]]*34/compileSdk = 31/g' {} \;
+          find . -name "build.gradle" -exec sed -i 's/compileSdk[[:space:]]*34/compileSdk 31/g' {} \;
+          find . -name "build.gradle" -exec sed -i 's/targetSdk[[:space:]]*=[[:space:]]*34/targetSdk = 31/g' {} \;
+          find . -name "build.gradle" -exec sed -i 's/targetSdk[[:space:]]*34/targetSdk 31/g' {} \;
 
-      - name: Attempt build with AGP 8.0.0 + compileSdk 31
-        id: build1
+      - name: Tier 1 - Print app/build.gradle
+        run: |
+          echo "=== app/build.gradle sau Tier 1 ==="
+          cat app/build.gradle || echo "Không tìm thấy app/build.gradle"
+
+      - name: Tier 1 - Build attempt
+        id: tier1
         continue-on-error: true
         run: |
-          cat > app/build.gradle <<'EOF'
-          plugins { id 'com.android.application' }
-          android { compileSdk 31; defaultConfig { applicationId "com.example.application2"; minSdk 21; targetSdk 31; versionCode 1; versionName "1.0" } }
-          EOF
+          echo "🚀 Tier 1: Build thử lần 1"
           mkdir -p gradle/wrapper
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip" > gradle/wrapper/gradle-wrapper.properties
+          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
           curl -L https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          echo '#!/bin/sh' > gradlew; echo 'exec java -classpath $0/../gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew; chmod +x gradlew
+          echo '#!/bin/sh' > gradlew
+          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
+          echo 'APP_HOME=$(pwd)' >> gradlew
+          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+          chmod +x gradlew
           ./gradlew assembleDebug 2>&1 | tee log1.txt
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then echo "status=success" >> $GITHUB_OUTPUT; else echo "status=failed" >> $GITHUB_OUTPUT; fi
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+          fi
 
-      - name: If failed, try AGP 7.0.2 + compileSdk 31
-        if: steps.build1.outputs.status == 'failed'
-        id: build2
-        continue-on-error: true
+      # ===== TẦNG 2: XÓA SẠCH VÀ TẠO MỚI BUILD.GRADLE =====
+      - name: Tier 2 - Wipe and recreate build files
+        if: steps.tier1.outputs.status == 'failed'
         run: |
+          echo "🔧 Tier 2: Xóa sạch và tạo mới build files"
+          rm -rf app/build
+          rm -f app/build.gradle
+          rm -f build.gradle
+          rm -f settings.gradle
+          rm -f gradle.properties
+          rm -f gradlew
+          rm -rf gradle/wrapper
+
+          echo "include ':app'" > settings.gradle
+          echo "rootProject.name = 'AimLock'" >> settings.gradle
+
           cat > build.gradle <<'EOF'
-          buildscript { repositories { google(); mavenCentral() } dependencies { classpath 'com.android.tools.build:gradle:7.0.2' } }
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.0.0' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
           EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+
           cat > app/build.gradle <<'EOF'
           plugins { id 'com.android.application' }
-          android { compileSdk 31; defaultConfig { applicationId "com.example.application2"; minSdk 21; targetSdk 31; versionCode 1; versionName "1.0" } }
+          android {
+              namespace 'com.example.application2'
+              compileSdk 31
+              defaultConfig {
+                  applicationId "com.example.application2"
+                  minSdk 21
+                  targetSdk 31
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes { release { minifyEnabled false } }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+              signingConfigs {
+                  debug {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "debug"
+                      keyPassword "android"
+                  }
+              }
+              buildTypes { debug { signingConfig signingConfigs.debug } }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
           EOF
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" > gradle/wrapper/gradle-wrapper.properties
-          curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          ./gradlew assembleDebug 2>&1 | tee log2.txt
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then echo "status=success" >> $GITHUB_OUTPUT; else echo "status=failed" >> $GITHUB_OUTPUT; fi
 
-      - name: If still failed, create manual guide
-        if: steps.build2.outputs.status == 'failed'
+          keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
+
+      - name: Tier 2 - Fix AndroidManifest.xml
+        if: steps.tier1.outputs.status == 'failed'
         run: |
-          cat > GUIDE.txt <<'EOF'
-          🛠️ Tất cả các workflow tự động đều thất bại. Hãy làm theo hướng dẫn này để build thủ công trên GitHub Codespaces (chắc chắn thành công):
-          1. Truy cập repository của bạn trên GitHub.
-          2. Bấm nút Code (xanh) -> Codespaces -> Create codespace on main.
-          3. Đợi môi trường khởi tạo (khoảng 2 phút).
-          4. Mở terminal (Terminal -> New Terminal).
-          5. Chạy lệnh: chmod +x gradlew
-          6. Chạy lệnh: ./gradlew assembleDebug
-          7. Nếu lỗi, sửa file app/build.gradle (thay compileSdk 34x thành 31) và chạy lại bước 6.
-          8. APK nằm ở: app/build/outputs/apk/debug/app-debug.apk (click chuột phải -> Download).
-          Nếu vẫn không được, copy lỗi và gửi cho tôi.
+          if [ -f app/src/main/AndroidManifest.xml ]; then
+            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
+              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
+            fi
+            if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
+              sed -i '/<\/application>/i \
+        <provider\
+            android:name="androidx.startup.InitializationProvider"\
+            android:authorities="${applicationId}.androidx-startup"\
+            android:exported="false"\
+            tools:node="merge">\
+            <meta-data\
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"\
+                android:value="androidx.startup" />\
+        </provider>' app/src/main/AndroidManifest.xml
+            fi
+          else
+            mkdir -p app/src/main
+            cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              package="com.example.application2">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="@string/app_name"
+                  android:theme="@style/Theme.AppCompat.Light">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".AimLockService"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_service_config" />
+                  </service>
+                  <provider
+                      android:name="androidx.startup.InitializationProvider"
+                      android:authorities="${applicationId}.androidx-startup"
+                      android:exported="false"
+                      tools:node="merge">
+                      <meta-data
+                          android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                          android:value="androidx.startup" />
+                  </provider>
+              </application>
+          </manifest>
           EOF
+          fi
 
-      - name: Upload APK (if any success)
-        if: steps.build1.outputs.status == 'success' || steps.build2.outputs.status == 'success'
+      - name: Tier 2 - Build attempt
+        if: steps.tier1.outputs.status == 'failed'
+        id: tier2
+        continue-on-error: true
+        run: |
+          echo "🚀 Tier 2: Build thử lần 2"
+          mkdir -p gradle/wrapper
+          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          curl -L https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          echo '#!/bin/sh' > gradlew
+          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
+          echo 'APP_HOME=$(pwd)' >> gradlew
+          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+          chmod +x gradlew
+          ./gradlew assembleDebug 2>&1 | tee log2.txt
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      # ===== TẦNG 3: BUILD VỚI GRADLE 7.2 (PHƯƠNG ÁN DỰ PHÒNG) =====
+      - name: Tier 3 - Fallback to Gradle 7.2
+        if: steps.tier2.outputs.status == 'failed' && steps.tier1.outputs.status == 'failed'
+        run: |
+          echo "🔧 Tier 3: Dùng Gradle 7.2 (fallback)"
+          rm -rf gradle/wrapper
+          mkdir -p gradle/wrapper
+          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          echo '#!/bin/sh' > gradlew
+          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
+          echo 'APP_HOME=$(pwd)' >> gradlew
+          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+          chmod +x gradlew
+
+      - name: Tier 3 - Build attempt
+        if: steps.tier2.outputs.status == 'failed' && steps.tier1.outputs.status == 'failed'
+        id: tier3
+        continue-on-error: true
+        run: |
+          echo "🚀 Tier 3: Build thử lần 3 (Gradle 7.2)"
+          ./gradlew assembleDebug 2>&1 | tee log3.txt
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      # ===== UPLOAD KẾT QUẢ =====
+      - name: Upload APK (if any tier success)
+        if: (steps.tier1.outputs.status == 'success' || steps.tier2.outputs.status == 'success' || steps.tier3.outputs.status == 'success')
         uses: actions/upload-artifact@v4
         with:
           name: AimLock-Signed
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload log (if failed)
-        if: steps.build1.outputs.status == 'failed' && steps.build2.outputs.status == 'failed'
+      - name: Upload error log (if all tiers failed)
+        if: (steps.tier1.outputs.status == 'failed' && steps.tier2.outputs.status == 'failed' && steps.tier3.outputs.status == 'failed')
         uses: actions/upload-artifact@v4
         with:
-          name: error-logs
-          path: log*.txt
+          name: error-log-all
+          path: |
+            log1.txt
+            log2.txt
+            log3.txt
 
-      - name: Upload manual guide (if all failed)
-        if: steps.build2.outputs.status == 'failed'
-        uses: actions/upload-artifact@v4
-        with:
-          name: manual-guide
-          path: GUIDE.txt
+      - name: Final status
+        run: |
+          echo "========================================="
+          echo "KẾT QUẢ BUILD:"
+          if [ "${{ steps.tier1.outputs.status }}" == "success" ]; then
+            echo "✅ Thành công ở Tier 1"
+          elif [ "${{ steps.tier2.outputs.status }}" == "success" ]; then
+            echo "✅ Thành công ở Tier 2"
+          elif [ "${{ steps.tier3.outputs.status }}" == "success" ]; then
+            echo "✅ Thành công ở Tier 3"
+          else
+            echo "❌ Tất cả 3 tier đều thất bại. Kiểm tra artifact 'error-log-all'."
+          fi
