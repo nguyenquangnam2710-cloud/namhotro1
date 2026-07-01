@@ -1,4 +1,4 @@
-name: Auto Fix & Build Signed APK
+name: Build Signed APK (Overwrite All)
 
 on:
   push:
@@ -21,8 +21,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # --- Giải nén file ZIP nếu có ---
-      - name: Unzip source code if present
+      - name: Unzip source if present
         run: |
           for f in *.zip; do
             if [ -f "$f" ]; then
@@ -32,16 +31,25 @@ jobs:
             fi
           done
 
-      # --- Tạo / sửa tất cả file build ---
-      - name: Auto-fix all build files
+      - name: Clean old build files
         run: |
-          # 1. Tạo settings.gradle nếu thiếu hoặc sai
+          rm -rf app/build
+          rm -rf app/.gradle
+          rm -rf .gradle
+          rm -f app/build.gradle
+          rm -f build.gradle
+          rm -f settings.gradle
+          rm -f gradle.properties
+
+      - name: Create ALL build files from scratch
+        run: |
+          # settings.gradle
           cat > settings.gradle <<'EOF'
           include ':app'
-          rootProject.name = "AimLockApp"
+          rootProject.name = "AimLock"
           EOF
 
-          # 2. Tạo build.gradle (root) với phiên bản plugin đúng
+          # build.gradle (root)
           cat > build.gradle <<'EOF'
           buildscript {
               ext.build_gradle_version = '7.0.2'
@@ -64,7 +72,7 @@ jobs:
           }
           EOF
 
-          # 3. Tạo gradle.properties với cấu hình tương thích
+          # gradle.properties
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
@@ -72,7 +80,7 @@ jobs:
           android.suppressUnsupportedCompileSdk=33
           EOF
 
-          # 4. Tạo app/build.gradle với đầy đủ thư viện và compileSdk=33
+          # app/build.gradle (dùng compileSdk 33)
           mkdir -p app
           cat > app/build.gradle <<'EOF'
           plugins {
@@ -118,19 +126,14 @@ jobs:
           }
           EOF
 
-      # --- Tạo keystore debug để ký APK ---
-      - name: Create debug keystore
-        run: |
+          # Tạo debug keystore
           keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
 
-      # --- Tự động sửa AndroidManifest.xml nếu thiếu provider ---
-      - name: Auto-fix AndroidManifest.xml
+      - name: Fix AndroidManifest.xml
         run: |
           if [ -f app/src/main/AndroidManifest.xml ]; then
-            # Kiểm tra nếu chưa có provider thì thêm vào
+            # Thêm provider nếu chưa có
             if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
-              echo "🔧 Đang thêm provider vào AndroidManifest.xml..."
-              # Chèn trước thẻ </application>
               sed -i '/<\/application>/i \
         <provider\
             android:name="androidx.startup.InitializationProvider"\
@@ -141,11 +144,12 @@ jobs:
                 android:name="androidx.lifecycle.ProcessLifecycleInitializer"\
                 android:value="androidx.startup" />\
         </provider>' app/src/main/AndroidManifest.xml
-            else
-              echo "✅ AndroidManifest.xml đã có provider."
+            fi
+            # Đảm bảo có xmlns:tools nếu chưa có
+            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
+              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
             fi
           else
-            echo "⚠️ Không tìm thấy AndroidManifest.xml, tạo mới..."
             mkdir -p app/src/main
             cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -188,7 +192,6 @@ jobs:
           EOF
           fi
 
-      # --- Tạo gradle wrapper ---
       - name: Create gradle wrapper
         run: |
           mkdir -p gradle/wrapper
@@ -205,8 +208,7 @@ jobs:
           echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
           chmod +x gradlew
 
-      # --- Build APK ---
-      - name: Build Signed APK
+      - name: Build APK
         id: build
         continue-on-error: true
         run: |
@@ -217,8 +219,7 @@ jobs:
             echo "status=failed" >> $GITHUB_OUTPUT
           fi
 
-      # --- Upload kết quả ---
-      - name: Upload Signed APK
+      - name: Upload APK
         if: steps.build.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
