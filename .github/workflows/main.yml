@@ -21,68 +21,137 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Create settings.gradle
+      - name: Create full project structure
         run: |
-          echo "include ':app'" > settings.gradle
-          echo "rootProject.name = \"namhotro1\"" >> settings.gradle
+          # Tạo thư mục
+          mkdir -p app/src/main/java/com/example/app
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
 
-      - name: Create build.gradle (root)
-        run: |
-          echo "buildscript {" > build.gradle
-          echo "    ext.build_gradle_version = '7.0.2'" >> build.gradle
-          echo "    repositories {" >> build.gradle
-          echo "        google()" >> build.gradle
-          echo "        mavenCentral()" >> build.gradle
-          echo "    }" >> build.gradle
-          echo "    dependencies {" >> build.gradle
-          echo "        classpath \"com.android.tools.build:gradle:\$build_gradle_version\"" >> build.gradle
-          echo "    }" >> build.gradle
-          echo "}" >> build.gradle
-          echo "allprojects {" >> build.gradle
-          echo "    repositories {" >> build.gradle
-          echo "        google()" >> build.gradle
-          echo "        mavenCentral()" >> build.gradle
-          echo "    }" >> build.gradle
-          echo "}" >> build.gradle
-          echo "task clean(type: Delete) {" >> build.gradle
-          echo "    delete rootProject.buildDir" >> build.gradle
-          echo "}" >> build.gradle
+          # Tạo settings.gradle
+          cat > settings.gradle <<'EOF'
+          include ':app'
+          rootProject.name = "namhotro1"
+          EOF
 
-      - name: Create gradle.properties
-        run: |
-          echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
-          echo "android.useAndroidX=true" >> gradle.properties
-          echo "android.enableJetifier=true" >> gradle.properties
+          # Tạo build.gradle root
+          cat > build.gradle <<'EOF'
+          buildscript {
+              ext.build_gradle_version = '7.0.2'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath "com.android.tools.build:gradle:$build_gradle_version"
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
 
-      - name: Create app/build.gradle
-        run: |
-          mkdir -p app
-          echo "plugins {" > app/build.gradle
-          echo "    id 'com.android.application'" >> app/build.gradle
-          echo "}" >> app/build.gradle
-          echo "android {" >> app/build.gradle
-          echo "    namespace 'com.example.application2'" >> app/build.gradle
-          echo "    compileSdk 34" >> app/build.gradle
-          echo "    defaultConfig {" >> app/build.gradle
-          echo "        applicationId \"com.example.application2\"" >> app/build.gradle
-          echo "        minSdk 21" >> app/build.gradle
-          echo "        targetSdk 34" >> app/build.gradle
-          echo "        versionCode 1" >> app/build.gradle
-          echo "        versionName \"1.0\"" >> app/build.gradle
-          echo "    }" >> app/build.gradle
-          echo "    buildTypes {" >> app/build.gradle
-          echo "        release {" >> app/build.gradle
-          echo "            minifyEnabled false" >> app/build.gradle
-          echo "        }" >> app/build.gradle
-          echo "    }" >> app/build.gradle
-          echo "    compileOptions {" >> app/build.gradle
-          echo "        sourceCompatibility JavaVersion.VERSION_1_8" >> app/build.gradle
-          echo "        targetCompatibility JavaVersion.VERSION_1_8" >> app/build.gradle
-          echo "    }" >> app/build.gradle
-          echo "}" >> app/build.gradle
-          echo "dependencies {" >> app/build.gradle
-          echo "    implementation 'androidx.appcompat:appcompat:1.5.1'" >> app/build.gradle
-          echo "}" >> app/build.gradle
+          # Tạo gradle.properties
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.suppressUnsupportedCompileSdk=33
+          EOF
+
+          # Tạo app/build.gradle (dùng compileSdk 33 để tương thích)
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.example.app'
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.example.app"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.5.1'
+          }
+          EOF
+
+          # Tạo AndroidManifest.xml
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.app">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="Demo App"
+                  android:theme="@style/Theme.AppCompat.Light">
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # Tạo MainActivity.java
+          cat > app/src/main/java/com/example/app/MainActivity.java <<'EOF'
+          package com.example.app;
+          import android.os.Bundle;
+          import androidx.appcompat.app.AppCompatActivity;
+          public class MainActivity extends AppCompatActivity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_main);
+              }
+          }
+          EOF
+
+          # Tạo activity_main.xml
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:gravity="center"
+              android:orientation="vertical">
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Hello World" />
+          </LinearLayout>
+          EOF
+
+          # Tạo strings.xml
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">Demo App</string>
+          </resources>
+          EOF
 
       - name: Create gradle wrapper
         run: |
