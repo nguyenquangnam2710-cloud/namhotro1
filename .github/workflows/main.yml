@@ -1,4 +1,4 @@
-name: Build APK from ZIP
+name: Auto Fix & Build Signed APK
 
 on:
   push:
@@ -21,38 +21,192 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Unzip source code
+      # --- Giải nén file ZIP nếu có ---
+      - name: Unzip source code if present
         run: |
-          # Giải nén file zip trong repository (giả sử tên là aimlock.zip hoặc app.zip)
-          # Nếu tên khác, bạn sửa lại dòng này
-          if [ -f "aimlock.zip" ]; then
-            unzip -q aimlock.zip -d .
-          elif [ -f "app.zip" ]; then
-            unzip -q app.zip -d .
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              echo "✅ Giải nén $f"
+              unzip -q "$f" -d .
+              break
+            fi
+          done
+
+      # --- Tạo / sửa tất cả file build ---
+      - name: Auto-fix all build files
+        run: |
+          # 1. Tạo settings.gradle nếu thiếu hoặc sai
+          cat > settings.gradle <<'EOF'
+          include ':app'
+          rootProject.name = "AimLockApp"
+          EOF
+
+          # 2. Tạo build.gradle (root) với phiên bản plugin đúng
+          cat > build.gradle <<'EOF'
+          buildscript {
+              ext.build_gradle_version = '7.0.2'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath "com.android.tools.build:gradle:$build_gradle_version"
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+          # 3. Tạo gradle.properties với cấu hình tương thích
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.suppressUnsupportedCompileSdk=33
+          EOF
+
+          # 4. Tạo app/build.gradle với đầy đủ thư viện và compileSdk=33
+          mkdir -p app
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.example.application2'
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.example.application2"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+              signingConfigs {
+                  debug {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "debug"
+                      keyPassword "android"
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.startup:startup-runtime:1.1.1'
+              implementation 'androidx.lifecycle:lifecycle-runtime:2.6.1'
+          }
+          EOF
+
+      # --- Tạo keystore debug để ký APK ---
+      - name: Create debug keystore
+        run: |
+          keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
+
+      # --- Tự động sửa AndroidManifest.xml nếu thiếu provider ---
+      - name: Auto-fix AndroidManifest.xml
+        run: |
+          if [ -f app/src/main/AndroidManifest.xml ]; then
+            # Kiểm tra nếu chưa có provider thì thêm vào
+            if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
+              echo "🔧 Đang thêm provider vào AndroidManifest.xml..."
+              # Chèn trước thẻ </application>
+              sed -i '/<\/application>/i \
+        <provider\
+            android:name="androidx.startup.InitializationProvider"\
+            android:authorities="${applicationId}.androidx-startup"\
+            android:exported="false"\
+            tools:node="merge">\
+            <meta-data\
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"\
+                android:value="androidx.startup" />\
+        </provider>' app/src/main/AndroidManifest.xml
+            else
+              echo "✅ AndroidManifest.xml đã có provider."
+            fi
           else
-            echo "Không tìm thấy file ZIP nào. Vui lòng đặt file ZIP vào repository."
-            exit 1
+            echo "⚠️ Không tìm thấy AndroidManifest.xml, tạo mới..."
+            mkdir -p app/src/main
+            cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              package="com.example.application2">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="@string/app_name"
+                  android:theme="@style/Theme.AppCompat.Light">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".AimLockService"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_service_config" />
+                  </service>
+                  <provider
+                      android:name="androidx.startup.InitializationProvider"
+                      android:authorities="${applicationId}.androidx-startup"
+                      android:exported="false"
+                      tools:node="merge">
+                      <meta-data
+                          android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                          android:value="androidx.startup" />
+                  </provider>
+              </application>
+          </manifest>
+          EOF
           fi
 
-      - name: Create gradle wrapper (nếu thiếu)
+      # --- Tạo gradle wrapper ---
+      - name: Create gradle wrapper
         run: |
-          if [ ! -f gradlew ]; then
-            mkdir -p gradle/wrapper
-            echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
-            echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-            echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
-            echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
-            echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-            curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-            echo '#!/bin/sh' > gradlew
-            echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
-            echo 'APP_HOME=$(pwd)' >> gradlew
-            echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
-            echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
-            chmod +x gradlew
-          fi
+          mkdir -p gradle/wrapper
+          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+          curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          echo '#!/bin/sh' > gradlew
+          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
+          echo 'APP_HOME=$(pwd)' >> gradlew
+          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+          chmod +x gradlew
 
-      - name: Build APK
+      # --- Build APK ---
+      - name: Build Signed APK
         id: build
         continue-on-error: true
         run: |
@@ -63,14 +217,15 @@ jobs:
             echo "status=failed" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload APK
+      # --- Upload kết quả ---
+      - name: Upload Signed APK
         if: steps.build.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: AimLock-Signed
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload error log
+      - name: Upload Error Log
         if: steps.build.outputs.status == 'failed'
         uses: actions/upload-artifact@v4
         with:
