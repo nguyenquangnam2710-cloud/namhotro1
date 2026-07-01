@@ -1,4 +1,4 @@
-name: Build Signed APK (Overwrite All)
+name: Final Build
 
 on:
   push:
@@ -31,8 +31,9 @@ jobs:
             fi
           done
 
-      - name: Clean old build files
+      - name: Wipe all build files and recreate from scratch
         run: |
+          # Xóa toàn bộ file build cũ
           rm -rf app/build
           rm -rf app/.gradle
           rm -rf .gradle
@@ -40,16 +41,22 @@ jobs:
           rm -f build.gradle
           rm -f settings.gradle
           rm -f gradle.properties
+          rm -f gradlew
+          rm -rf gradle/wrapper
 
-      - name: Create ALL build files from scratch
-        run: |
-          # settings.gradle
+          # Tạo thư mục cần thiết
+          mkdir -p app/src/main/java/com/example/application2
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
+
+          # --- Tạo settings.gradle ---
           cat > settings.gradle <<'EOF'
           include ':app'
           rootProject.name = "AimLock"
           EOF
 
-          # build.gradle (root)
+          # --- Tạo build.gradle (root) ---
           cat > build.gradle <<'EOF'
           buildscript {
               ext.build_gradle_version = '7.0.2'
@@ -72,7 +79,7 @@ jobs:
           }
           EOF
 
-          # gradle.properties
+          # --- Tạo gradle.properties ---
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
@@ -80,8 +87,7 @@ jobs:
           android.suppressUnsupportedCompileSdk=33
           EOF
 
-          # app/build.gradle (dùng compileSdk 33)
-          mkdir -p app
+          # --- Tạo app/build.gradle (compileSdk 33) ---
           cat > app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
@@ -126,13 +132,12 @@ jobs:
           }
           EOF
 
-          # Tạo debug keystore
+          # --- Tạo keystore debug ---
           keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
 
       - name: Fix AndroidManifest.xml
         run: |
           if [ -f app/src/main/AndroidManifest.xml ]; then
-            # Thêm provider nếu chưa có
             if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
               sed -i '/<\/application>/i \
         <provider\
@@ -145,12 +150,10 @@ jobs:
                 android:value="androidx.startup" />\
         </provider>' app/src/main/AndroidManifest.xml
             fi
-            # Đảm bảo có xmlns:tools nếu chưa có
             if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
               sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
             fi
           else
-            mkdir -p app/src/main
             cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -190,6 +193,12 @@ jobs:
               </application>
           </manifest>
           EOF
+          fi
+
+      - name: Fix AimLockService.java (if exists)
+        run: |
+          if [ -f app/src/main/java/com/example/application2/AimLockService.java ]; then
+            sed -i 's/getSystemService(Display.class)/getSystemService(WINDOW_SERVICE)/g' app/src/main/java/com/example/application2/AimLockService.java
           fi
 
       - name: Create gradle wrapper
