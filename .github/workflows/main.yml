@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +20,85 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Ensure correct project structure
+        run: |
+          # Tạo thư mục app nếu chưa có
+          mkdir -p app/src/main
+          mkdir -p app/src/main/java/com/example/application2
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
+
+          # Tạo settings.gradle nếu thiếu hoặc sai
+          if [ ! -f settings.gradle ] || ! grep -q "include ':app'" settings.gradle; then
+            echo "include ':app'" > settings.gradle
+            echo "rootProject.name = \"namhotro1\"" >> settings.gradle
+          fi
+
+          # Tạo build.gradle root nếu thiếu
+          if [ ! -f build.gradle ]; then
+            cat > build.gradle << 'EOF'
+        buildscript {
+            ext.build_gradle_version = '7.0.2'
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath "com.android.tools.build:gradle:$build_gradle_version"
+            }
+        }
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        task clean(type: Delete) {
+            delete rootProject.buildDir
+        }
+        EOF
+          fi
+
+          # Tạo app/build.gradle nếu thiếu
+          if [ ! -f app/build.gradle ]; then
+            cat > app/build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application'
+        }
+        android {
+            namespace 'com.example.application2'
+            compileSdk 34
+            defaultConfig {
+                applicationId "com.example.application2"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+            buildTypes {
+                release {
+                    minifyEnabled false
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.5.1'
+        }
+        EOF
+          fi
+
+          # Tạo gradle.properties nếu thiếu
+          if [ ! -f gradle.properties ]; then
+            echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+            echo "android.useAndroidX=true" >> gradle.properties
+            echo "android.enableJetifier=true" >> gradle.properties
+          fi
 
       - name: Create gradle wrapper
         run: |
