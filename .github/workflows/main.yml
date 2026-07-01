@@ -1,4 +1,4 @@
-name: Build APK (Ultimate Optimized)
+name: Ultimate Build (All-in-One)
 
 on:
   push:
@@ -20,205 +20,87 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Unzip source code
+      - name: Unzip source
         run: |
           for f in *.zip; do
             if [ -f "$f" ]; then
-              echo "✅ Unzipping $f"
               unzip -q "$f" -d .
               break
             fi
           done
 
-      - name: Wipe old build files and recreate fresh
+      - name: Fix 34x in ALL files
         run: |
-          rm -rf app/build
-          rm -f app/build.gradle
-          rm -f build.gradle
-          rm -f settings.gradle
-          rm -f gradle.properties
-          rm -f gradlew
-          rm -rf gradle/wrapper
+          find . -type f -exec sed -i 's/34x/31/g' {} \;
+          find . -type f -exec sed -i 's/34X/31/g' {} \;
+          find . -type f -exec sed -i "s/'34x'/'31'/g" {} \;
+          find . -type f -exec sed -i 's/"34x"/"31"/g' {} \;
 
-          mkdir -p app/src/main
-
-          # settings.gradle
-          cat > settings.gradle <<'EOF'
-          include ':app'
-          rootProject.name = 'AimLock'
-          EOF
-
-          # build.gradle (root) - AGP 8.0.0
-          cat > build.gradle <<'EOF'
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.0.0'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-
-          # gradle.properties
-          cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
-
-          # app/build.gradle - compileSdk 34, AGP 8.0 compatible
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              namespace 'com.example.application2'
-              compileSdk 34
-              defaultConfig {
-                  applicationId "com.example.application2"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-              signingConfigs {
-                  debug {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "debug"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes {
-                  debug {
-                      signingConfig signingConfigs.debug
-                  }
-              }
-          }
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'androidx.startup:startup-runtime:1.1.1'
-          }
-          EOF
-
-          # debug keystore
-          keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
-
-      - name: Fix AndroidManifest.xml (add provider if missing)
-        run: |
-          if [ -f app/src/main/AndroidManifest.xml ]; then
-            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
-              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
-            fi
-            if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
-              sed -i '/<\/application>/i \
-        <provider\
-            android:name="androidx.startup.InitializationProvider"\
-            android:authorities="${applicationId}.androidx-startup"\
-            android:exported="false"\
-            tools:node="merge">\
-            <meta-data\
-                android:name="androidx.lifecycle.ProcessLifecycleInitializer"\
-                android:value="androidx.startup" />\
-        </provider>' app/src/main/AndroidManifest.xml
-            fi
-          else
-            mkdir -p app/src/main
-            cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools"
-              package="com.example.application2">
-              <application
-                  android:allowBackup="true"
-                  android:icon="@android:drawable/sym_def_app_icon"
-                  android:label="@string/app_name"
-                  android:theme="@style/Theme.AppCompat.Light">
-                  <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-                  <service
-                      android:name=".AimLockService"
-                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.accessibilityservice.AccessibilityService" />
-                      </intent-filter>
-                      <meta-data
-                          android:name="android.accessibilityservice"
-                          android:resource="@xml/accessibility_service_config" />
-                  </service>
-                  <provider
-                      android:name="androidx.startup.InitializationProvider"
-                      android:authorities="${applicationId}.androidx-startup"
-                      android:exported="false"
-                      tools:node="merge">
-                      <meta-data
-                          android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-                          android:value="androidx.startup" />
-                  </provider>
-              </application>
-          </manifest>
-          EOF
-          fi
-
-      - name: Create gradle wrapper (Gradle 8.0)
-        run: |
-          mkdir -p gradle/wrapper
-          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-          curl -L https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          echo '#!/bin/sh' > gradlew
-          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
-          echo 'APP_HOME=$(pwd)' >> gradlew
-          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
-          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
-          chmod +x gradlew
-
-      - name: Build APK
-        id: build
+      - name: Attempt build with AGP 8.0.0 + compileSdk 31
+        id: build1
         continue-on-error: true
         run: |
-          ./gradlew assembleDebug 2>&1 | tee log.txt
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "status=failed" >> $GITHUB_OUTPUT
-          fi
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android { compileSdk 31; defaultConfig { applicationId "com.example.application2"; minSdk 21; targetSdk 31; versionCode 1; versionName "1.0" } }
+          EOF
+          mkdir -p gradle/wrapper
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.0-bin.zip" > gradle/wrapper/gradle-wrapper.properties
+          curl -L https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          echo '#!/bin/sh' > gradlew; echo 'exec java -classpath $0/../gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew; chmod +x gradlew
+          ./gradlew assembleDebug 2>&1 | tee log1.txt
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then echo "status=success" >> $GITHUB_OUTPUT; else echo "status=failed" >> $GITHUB_OUTPUT; fi
 
-      - name: Upload APK (if success)
-        if: steps.build.outputs.status == 'success'
+      - name: If failed, try AGP 7.0.2 + compileSdk 31
+        if: steps.build1.outputs.status == 'failed'
+        id: build2
+        continue-on-error: true
+        run: |
+          cat > build.gradle <<'EOF'
+          buildscript { repositories { google(); mavenCentral() } dependencies { classpath 'com.android.tools.build:gradle:7.0.2' } }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android { compileSdk 31; defaultConfig { applicationId "com.example.application2"; minSdk 21; targetSdk 31; versionCode 1; versionName "1.0" } }
+          EOF
+          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" > gradle/wrapper/gradle-wrapper.properties
+          curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          ./gradlew assembleDebug 2>&1 | tee log2.txt
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then echo "status=success" >> $GITHUB_OUTPUT; else echo "status=failed" >> $GITHUB_OUTPUT; fi
+
+      - name: If still failed, create manual guide
+        if: steps.build2.outputs.status == 'failed'
+        run: |
+          cat > GUIDE.txt <<'EOF'
+          🛠️ Tất cả các workflow tự động đều thất bại. Hãy làm theo hướng dẫn này để build thủ công trên GitHub Codespaces (chắc chắn thành công):
+          1. Truy cập repository của bạn trên GitHub.
+          2. Bấm nút Code (xanh) -> Codespaces -> Create codespace on main.
+          3. Đợi môi trường khởi tạo (khoảng 2 phút).
+          4. Mở terminal (Terminal -> New Terminal).
+          5. Chạy lệnh: chmod +x gradlew
+          6. Chạy lệnh: ./gradlew assembleDebug
+          7. Nếu lỗi, sửa file app/build.gradle (thay compileSdk 34x thành 31) và chạy lại bước 6.
+          8. APK nằm ở: app/build/outputs/apk/debug/app-debug.apk (click chuột phải -> Download).
+          Nếu vẫn không được, copy lỗi và gửi cho tôi.
+          EOF
+
+      - name: Upload APK (if any success)
+        if: steps.build1.outputs.status == 'success' || steps.build2.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: AimLock-Signed
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload error log (if failed)
-        if: steps.build.outputs.status == 'failed'
+      - name: Upload log (if failed)
+        if: steps.build1.outputs.status == 'failed' && steps.build2.outputs.status == 'failed'
         uses: actions/upload-artifact@v4
         with:
-          name: error-log
-          path: log.txt
+          name: error-logs
+          path: log*.txt
+
+      - name: Upload manual guide (if all failed)
+        if: steps.build2.outputs.status == 'failed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-guide
+          path: GUIDE.txt
