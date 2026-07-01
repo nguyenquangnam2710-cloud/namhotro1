@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK from ZIP
 
 on:
   push:
@@ -21,153 +21,36 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Create full project structure
+      - name: Unzip source code
         run: |
-          # Tạo thư mục
-          mkdir -p app/src/main/java/com/example/app
-          mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/xml
+          # Giải nén file zip trong repository (giả sử tên là aimlock.zip hoặc app.zip)
+          # Nếu tên khác, bạn sửa lại dòng này
+          if [ -f "aimlock.zip" ]; then
+            unzip -q aimlock.zip -d .
+          elif [ -f "app.zip" ]; then
+            unzip -q app.zip -d .
+          else
+            echo "Không tìm thấy file ZIP nào. Vui lòng đặt file ZIP vào repository."
+            exit 1
+          fi
 
-          # Tạo settings.gradle
-          cat > settings.gradle <<'EOF'
-          include ':app'
-          rootProject.name = "namhotro1"
-          EOF
-
-          # Tạo build.gradle root
-          cat > build.gradle <<'EOF'
-          buildscript {
-              ext.build_gradle_version = '7.0.2'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath "com.android.tools.build:gradle:$build_gradle_version"
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
-          EOF
-
-          # Tạo gradle.properties
-          cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m
-          android.useAndroidX=true
-          android.enableJetifier=true
-          android.suppressUnsupportedCompileSdk=33
-          EOF
-
-          # Tạo app/build.gradle (dùng compileSdk 33 để tương thích)
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              namespace 'com.example.app'
-              compileSdk 33
-              defaultConfig {
-                  applicationId "com.example.app"
-                  minSdk 21
-                  targetSdk 33
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-          }
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.5.1'
-          }
-          EOF
-
-          # Tạo AndroidManifest.xml
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.example.app">
-              <application
-                  android:allowBackup="true"
-                  android:icon="@android:drawable/sym_def_app_icon"
-                  android:label="Demo App"
-                  android:theme="@style/Theme.AppCompat.Light">
-                  <activity android:name=".MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          # Tạo MainActivity.java
-          cat > app/src/main/java/com/example/app/MainActivity.java <<'EOF'
-          package com.example.app;
-          import android.os.Bundle;
-          import androidx.appcompat.app.AppCompatActivity;
-          public class MainActivity extends AppCompatActivity {
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  setContentView(R.layout.activity_main);
-              }
-          }
-          EOF
-
-          # Tạo activity_main.xml
-          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:gravity="center"
-              android:orientation="vertical">
-              <TextView
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:text="Hello World" />
-          </LinearLayout>
-          EOF
-
-          # Tạo strings.xml
-          cat > app/src/main/res/values/strings.xml <<'EOF'
-          <resources>
-              <string name="app_name">Demo App</string>
-          </resources>
-          EOF
-
-      - name: Create gradle wrapper
+      - name: Create gradle wrapper (nếu thiếu)
         run: |
-          mkdir -p gradle/wrapper
-          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-          curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-          echo '#!/bin/sh' > gradlew
-          echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
-          echo 'APP_HOME=$(pwd)' >> gradlew
-          echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
-          echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
-          chmod +x gradlew
+          if [ ! -f gradlew ]; then
+            mkdir -p gradle/wrapper
+            echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+            echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+            echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-7.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+            echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+            echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+            curl -L https://raw.githubusercontent.com/gradle/gradle/v7.2.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+            echo '#!/bin/sh' > gradlew
+            echo 'JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}' >> gradlew
+            echo 'APP_HOME=$(pwd)' >> gradlew
+            echo 'CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar' >> gradlew
+            echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
+            chmod +x gradlew
+          fi
 
       - name: Build APK
         id: build
@@ -180,14 +63,14 @@ jobs:
             echo "status=failed" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload APK (if success)
+      - name: Upload APK
         if: steps.build.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload error log (if failed)
+      - name: Upload error log
         if: steps.build.outputs.status == 'failed'
         uses: actions/upload-artifact@v4
         with:
