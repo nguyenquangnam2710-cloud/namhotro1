@@ -1,4 +1,4 @@
-name: Final Build
+name: Build APK (Final)
 
 on:
   push:
@@ -8,11 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -21,22 +20,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Unzip source if present
+      - name: Unzip source
         run: |
           for f in *.zip; do
             if [ -f "$f" ]; then
-              echo "✅ Giải nén $f"
               unzip -q "$f" -d .
               break
             fi
           done
 
-      - name: Wipe all build files and recreate from scratch
+      - name: Wipe and recreate all build files
         run: |
-          # Xóa toàn bộ file build cũ
           rm -rf app/build
-          rm -rf app/.gradle
-          rm -rf .gradle
           rm -f app/build.gradle
           rm -f build.gradle
           rm -f settings.gradle
@@ -44,73 +39,37 @@ jobs:
           rm -f gradlew
           rm -rf gradle/wrapper
 
-          # Tạo thư mục cần thiết
-          mkdir -p app/src/main/java/com/example/application2
-          mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main
 
-          # --- Tạo settings.gradle ---
-          cat > settings.gradle <<'EOF'
-          include ':app'
-          rootProject.name = "AimLock"
-          EOF
+          echo "include ':app'" > settings.gradle
+          echo "rootProject.name = 'AimLock'" >> settings.gradle
 
-          # --- Tạo build.gradle (root) ---
-          cat > build.gradle <<'EOF'
+          cat > build.gradle <<EOF
           buildscript {
-              ext.build_gradle_version = '7.0.2'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath "com.android.tools.build:gradle:$build_gradle_version"
-              }
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:7.0.2' }
           }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
+          allprojects { repositories { google(); mavenCentral() } }
           EOF
 
-          # --- Tạo gradle.properties ---
-          cat > gradle.properties <<'EOF'
+          cat > gradle.properties <<EOF
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
           android.enableJetifier=true
-          android.suppressUnsupportedCompileSdk=33
           EOF
 
-          # --- Tạo app/build.gradle (compileSdk 33) ---
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
+          cat > app/build.gradle <<EOF
+          plugins { id 'com.android.application' }
           android {
-              namespace 'com.example.application2'
-              compileSdk 33
+              compileSdk 31
               defaultConfig {
                   applicationId "com.example.application2"
                   minSdk 21
-                  targetSdk 33
+                  targetSdk 31
                   versionCode 1
                   versionName "1.0"
               }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
+              buildTypes { release { minifyEnabled false } }
               signingConfigs {
                   debug {
                       storeFile file("debug.keystore")
@@ -119,25 +78,21 @@ jobs:
                       keyPassword "android"
                   }
               }
-              buildTypes {
-                  debug {
-                      signingConfig signingConfigs.debug
-                  }
-              }
+              buildTypes { debug { signingConfig signingConfigs.debug } }
           }
           dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'androidx.startup:startup-runtime:1.1.1'
-              implementation 'androidx.lifecycle:lifecycle-runtime:2.6.1'
+              implementation 'androidx.appcompat:appcompat:1.5.1'
           }
           EOF
 
-          # --- Tạo keystore debug ---
           keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
 
       - name: Fix AndroidManifest.xml
         run: |
           if [ -f app/src/main/AndroidManifest.xml ]; then
+            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
+              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
+            fi
             if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
               sed -i '/<\/application>/i \
         <provider\
@@ -150,55 +105,6 @@ jobs:
                 android:value="androidx.startup" />\
         </provider>' app/src/main/AndroidManifest.xml
             fi
-            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
-              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
-            fi
-          else
-            cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools"
-              package="com.example.application2">
-              <application
-                  android:allowBackup="true"
-                  android:icon="@android:drawable/sym_def_app_icon"
-                  android:label="@string/app_name"
-                  android:theme="@style/Theme.AppCompat.Light">
-                  <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-                  <service
-                      android:name=".AimLockService"
-                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.accessibilityservice.AccessibilityService" />
-                      </intent-filter>
-                      <meta-data
-                          android:name="android.accessibilityservice"
-                          android:resource="@xml/accessibility_service_config" />
-                  </service>
-                  <provider
-                      android:name="androidx.startup.InitializationProvider"
-                      android:authorities="${applicationId}.androidx-startup"
-                      android:exported="false"
-                      tools:node="merge">
-                      <meta-data
-                          android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-                          android:value="androidx.startup" />
-                  </provider>
-              </application>
-          </manifest>
-          EOF
-          fi
-
-      - name: Fix AimLockService.java (if exists)
-        run: |
-          if [ -f app/src/main/java/com/example/application2/AimLockService.java ]; then
-            sed -i 's/getSystemService(Display.class)/getSystemService(WINDOW_SERVICE)/g' app/src/main/java/com/example/application2/AimLockService.java
           fi
 
       - name: Create gradle wrapper
@@ -217,16 +123,12 @@ jobs:
           echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
           chmod +x gradlew
 
-      - name: Build APK
+      - name: Build
         id: build
         continue-on-error: true
         run: |
-          ./gradlew assembleDebug 2>&1 | tee full_log.txt
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "status=failed" >> $GITHUB_OUTPUT
-          fi
+          ./gradlew assembleDebug 2>&1 | tee log.txt
+          echo "status=$([ ${PIPESTATUS[0]} -eq 0 ] && echo success || echo failed)" >> $GITHUB_OUTPUT
 
       - name: Upload APK
         if: steps.build.outputs.status == 'success'
@@ -235,9 +137,9 @@ jobs:
           name: AimLock-Signed
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload Error Log
+      - name: Upload log
         if: steps.build.outputs.status == 'failed'
         uses: actions/upload-artifact@v4
         with:
           name: error-log
-          path: full_log.txt
+          path: log.txt
