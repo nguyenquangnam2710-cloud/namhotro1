@@ -1,4 +1,4 @@
-name: aimlock
+name: Build APK
 
 on:
   push:
@@ -21,24 +21,22 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Ensure correct project structure
+      - name: Create all necessary files
         run: |
           # Tạo thư mục app nếu chưa có
-          mkdir -p app/src/main
           mkdir -p app/src/main/java/com/example/application2
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/xml
 
-          # Tạo settings.gradle nếu thiếu hoặc sai
-          if [ ! -f settings.gradle ] || ! grep -q "include ':app'" settings.gradle; then
-            echo "include ':app'" > settings.gradle
-            echo "rootProject.name = \"namhotro1\"" >> settings.gradle
-          fi
+          # Tạo settings.gradle
+          cat > settings.gradle << 'EOF'
+        include ':app'
+        rootProject.name = "namhotro1"
+        EOF
 
-          # Tạo build.gradle root nếu thiếu
-          if [ ! -f build.gradle ]; then
-            cat > build.gradle << 'EOF'
+          # Tạo build.gradle (root)
+          cat > build.gradle << 'EOF'
         buildscript {
             ext.build_gradle_version = '7.0.2'
             repositories {
@@ -59,11 +57,9 @@ jobs:
             delete rootProject.buildDir
         }
         EOF
-          fi
 
-          # Tạo app/build.gradle nếu thiếu
-          if [ ! -f app/build.gradle ]; then
-            cat > app/build.gradle << 'EOF'
+          # Tạo app/build.gradle
+          cat > app/build.gradle << 'EOF'
         plugins {
             id 'com.android.application'
         }
@@ -91,14 +87,13 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.5.1'
         }
         EOF
-          fi
 
-          # Tạo gradle.properties nếu thiếu
-          if [ ! -f gradle.properties ]; then
-            echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
-            echo "android.useAndroidX=true" >> gradle.properties
-            echo "android.enableJetifier=true" >> gradle.properties
-          fi
+          # Tạo gradle.properties
+          cat > gradle.properties << 'EOF'
+        org.gradle.jvmargs=-Xmx2048m
+        android.useAndroidX=true
+        android.enableJetifier=true
+        EOF
 
       - name: Create gradle wrapper
         run: |
