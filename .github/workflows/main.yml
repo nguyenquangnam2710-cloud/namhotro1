@@ -1,4 +1,4 @@
-name: Build APK (Final)
+name: Build APK (Fix direct)
 
 on:
   push:
@@ -29,82 +29,20 @@ jobs:
             fi
           done
 
-      - name: Wipe and recreate all build files
+      - name: Fix all build.gradle and gradle.properties (replace 34 -> 31)
         run: |
-          rm -rf app/build
-          rm -f app/build.gradle
-          rm -f build.gradle
-          rm -f settings.gradle
-          rm -f gradle.properties
-          rm -f gradlew
-          rm -rf gradle/wrapper
+          # Tìm và thay thế tất cả compileSdk, targetSdk, minSdk (nếu có)
+          find . -name "*.gradle" -exec sed -i 's/compileSdk 34/compileSdk 31/g' {} \;
+          find . -name "*.gradle" -exec sed -i 's/compileSdk 34x/compileSdk 31/g' {} \;
+          find . -name "*.gradle" -exec sed -i 's/targetSdk 34/targetSdk 31/g' {} \;
+          find . -name "*.gradle" -exec sed -i 's/targetSdk 34x/targetSdk 31/g' {} \;
+          find . -name "*.properties" -exec sed -i 's/34/31/g' {} \;
 
-          mkdir -p app/src/main
-
-          echo "include ':app'" > settings.gradle
-          echo "rootProject.name = 'AimLock'" >> settings.gradle
-
-          cat > build.gradle <<EOF
-          buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath 'com.android.tools.build:gradle:7.0.2' }
-          }
-          allprojects { repositories { google(); mavenCentral() } }
-          EOF
-
-          cat > gradle.properties <<EOF
-          org.gradle.jvmargs=-Xmx2048m
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
-
-          cat > app/build.gradle <<EOF
-          plugins { id 'com.android.application' }
-          android {
-              compileSdk 31
-              defaultConfig {
-                  applicationId "com.example.application2"
-                  minSdk 21
-                  targetSdk 31
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes { release { minifyEnabled false } }
-              signingConfigs {
-                  debug {
-                      storeFile file("debug.keystore")
-                      storePassword "android"
-                      keyAlias "debug"
-                      keyPassword "android"
-                  }
-              }
-              buildTypes { debug { signingConfig signingConfigs.debug } }
-          }
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.5.1'
-          }
-          EOF
-
-          keytool -genkey -v -keystore app/debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, ST=Debug, C=Debug"
-
-      - name: Fix AndroidManifest.xml
-        run: |
-          if [ -f app/src/main/AndroidManifest.xml ]; then
-            if ! grep -q "xmlns:tools" app/src/main/AndroidManifest.xml; then
-              sed -i 's/<manifest /<manifest xmlns:tools="http:\/\/schemas.android.com\/tools" /' app/src/main/AndroidManifest.xml
-            fi
-            if ! grep -q "androidx.startup.InitializationProvider" app/src/main/AndroidManifest.xml; then
-              sed -i '/<\/application>/i \
-        <provider\
-            android:name="androidx.startup.InitializationProvider"\
-            android:authorities="${applicationId}.androidx-startup"\
-            android:exported="false"\
-            tools:node="merge">\
-            <meta-data\
-                android:name="androidx.lifecycle.ProcessLifecycleInitializer"\
-                android:value="androidx.startup" />\
-        </provider>' app/src/main/AndroidManifest.xml
-            fi
+          # Đảm bảo app/build.gradle tồn tại
+          if [ -f app/build.gradle ]; then
+            echo "✅ Đã sửa app/build.gradle"
+          else
+            echo "⚠️ Không tìm thấy app/build.gradle"
           fi
 
       - name: Create gradle wrapper
@@ -123,7 +61,7 @@ jobs:
           echo 'exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"' >> gradlew
           chmod +x gradlew
 
-      - name: Build
+      - name: Build APK
         id: build
         continue-on-error: true
         run: |
